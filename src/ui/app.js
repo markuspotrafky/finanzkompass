@@ -582,13 +582,15 @@ async function renderDashboardPage(container) {
               <span class="ds-row-value ds-negative" style="font-size:12px">–${formatAmount(forecast.expenseInstallments)}</span>
             </div>` : ''}
             <div class="ds-row ds-row-projected"
-                 title="Aktueller Stand (${formatAmount(forecast.projected.currentBalance)}) + noch ausstehende Buchungen diesen Monat">
+                 title="Realer Kontostand am ${formatDate(forecast.projected.endOfMonth)}: ${formatAmount(forecast.projected.projectedBalance)}${forecast.projected.usingOverdraft ? ` · inkl. Dispo (${formatAmount(forecast.projected.totalOverdraft)})` : ''}">
               <span class="ds-row-label">
-                Stand ${formatDate(forecast.projected.endOfMonth)}
-                <span class="ds-projected-hint">fließt ein</span>
+                Verfügbar am ${formatDate(forecast.projected.endOfMonth)}
+                ${forecast.projected.usingOverdraft
+                  ? `<span class="ds-projected-hint ds-projected-hint-dispo">inkl. Dispo</span>`
+                  : `<span class="ds-projected-hint">fließt ein</span>`}
               </span>
-              <span class="ds-row-value ${forecast.projected.projectedBalance < 0 ? 'ds-negative' : 'ds-muted'}">
-                ${forecast.projected.projectedBalance >= 0 ? '+' : ''}${formatAmount(forecast.projected.projectedBalance)}
+              <span class="ds-row-value ${forecast.projected.projectedAvailable < 0 ? 'ds-negative' : 'ds-muted'}">
+                ${forecast.projected.projectedAvailable >= 0 ? '+' : ''}${formatAmount(forecast.projected.projectedAvailable)}
               </span>
             </div>
           </div>

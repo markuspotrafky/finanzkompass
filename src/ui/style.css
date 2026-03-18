@@ -991,12 +991,17 @@ select option { background: var(--bg-panel); }
   opacity: 0.75;
 }
 
-/* Projizierter Monatsendstand — leicht abgesetzt vom Rest */
+/* Projizierter Monatsendstand — klar abgesetzt vom Rest */
 .ds-row-projected {
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px dashed rgba(255,255,255,0.08);
-  border-bottom: none;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: none;
+  border-top: 2px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  margin-left: -16px;
+  margin-right: -16px;
+  margin-bottom: -4px;
 }
 
 /* "fließt ein" Badge neben dem Label */
@@ -1006,13 +1011,21 @@ select option { background: var(--bg-panel); }
   text-transform: uppercase;
   letter-spacing: 0.4px;
   color: var(--text-muted);
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.14);
   border-radius: 6px;
-  padding: 1px 5px;
-  margin-left: 4px;
+  padding: 2px 6px;
+  margin-left: 5px;
   vertical-align: middle;
   flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Variante: Dispo aktiv → orange */
+.ds-projected-hint-dispo {
+  color: var(--warning);
+  background: rgba(245,166,35,0.1);
+  border-color: rgba(245,166,35,0.3);
 }
 
 /* Gedämpfte Farbe für neutralen Wert (positiver Monatsendstand) */

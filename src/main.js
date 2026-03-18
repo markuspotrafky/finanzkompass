@@ -288,9 +288,22 @@ async function startApp() {
     await setSplashProgress(10, 'Speicherort ermitteln…');
 
     const dbPath = await resolveDbPath();
-    await setSplashProgress(25, 'Datenbank laden…');
+    await setSplashProgress(20, 'Passwort abfragen…');
 
-    await db.initialize(dbPath);
+    // ── Passwort-Abfrage ──────────────────────────────────────────────────
+    // Passwort wird NUR im RAM gehalten — niemals auf Disk geschrieben.
+    // Maximale Versuche: 3, danach App-Beendigung.
+    const password = await promptPassword(dbPath);
+    if (!password) {
+      // Nutzer hat abgebrochen
+      app.quit();
+      return;
+    }
+
+    await setSplashProgress(30, 'Datenbank laden…');
+
+    // Passwort an DB-Schicht übergeben (einmalig beim Start)
+    await db.initialize(dbPath, password);
     await setSplashProgress(50, 'Datenbank bereit');
 
     let bookedCount = 0;
@@ -331,10 +344,142 @@ async function startApp() {
   } catch (e) {
     console.error('Kritischer Startfehler:', e);
     if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
-    await dialog.showErrorBox('FinanzKompass – Startfehler',
-      `Die App konnte nicht gestartet werden:\n\n${e.message}\n\nBitte starte die App neu.`);
+
+    // Falsches Passwort → freundliche Meldung, dann beenden
+    const isWrongPassword = e.message?.includes('Falsches Passwort');
+    await dialog.showErrorBox(
+      isWrongPassword ? 'FinanzKompass – Falsches Passwort' : 'FinanzKompass – Startfehler',
+      isWrongPassword
+        ? 'Das eingegebene Passwort ist falsch oder die Datenbank ist beschädigt.\n\nBitte starte die App neu und versuche es erneut.'
+        : `Die App konnte nicht gestartet werden:\n\n${e.message}\n\nBitte starte die App neu.`
+    );
     app.quit();
   }
+}
+
+// ── Passwort-Prompt ───────────────────────────────────────────────────────
+// Zeigt einen nativen Electron-Dialog zur Passworteingabe.
+// Gibt das Passwort als String zurück oder null wenn abgebrochen.
+// Bei falschem Passwort: bis zu 3 Versuche, danach null.
+async function promptPassword(dbPath) {
+  const isNew = !require('fs').existsSync(dbPath);
+  const MAX_ATTEMPTS = 3;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // Electron hat keinen nativen Input-Dialog — wir öffnen ein kleines BrowserWindow
+    const password = await showPasswordWindow(isNew, attempt, MAX_ATTEMPTS);
+    if (password === null) return null;  // Nutzer hat abgebrochen
+    if (password.length >= 1) return password;
+  }
+
+  return null;
+}
+
+// Öffnet ein minimales BrowserWindow für die Passworteingabe.
+// Gibt Promise<string|null> zurück.
+function showPasswordWindow(isNew, attempt, maxAttempts) {
+  return new Promise(resolve => {
+    const win = new BrowserWindow({
+      width:           420,
+      height:          280,
+      frame:           false,
+      resizable:       false,
+      center:          true,
+      alwaysOnTop:     true,
+      backgroundColor: '#0B0F17',
+      webPreferences:  {
+        nodeIntegration:  true,
+        contextIsolation: false,
+      },
+      show: false,
+    });
+
+    const attemptsLeft = maxAttempts - attempt + 1;
+    const isRetry      = attempt > 1;
+
+    // HTML inline — kein externes File nötig
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0B0F17; color:#e8eaf0; font-family:-apple-system,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    justify-content:center; height:100vh; padding:28px; gap:16px;
+    user-select:none; -webkit-app-region:drag;
+  }
+  .logo { font-size:18px; font-weight:700; color:#1DB954; letter-spacing:-0.5px; }
+  .logo span { color:#e8eaf0; }
+  h2 { font-size:14px; color:#9ba4b5; font-weight:400; text-align:center; }
+  .error { color:#ff4d4f; font-size:12px; background:rgba(255,77,79,0.1);
+           border:1px solid rgba(255,77,79,0.25); border-radius:8px;
+           padding:7px 12px; width:100%; text-align:center; }
+  input {
+    width:100%; padding:10px 14px; background:#141824;
+    border:1px solid #2a3040; border-radius:10px;
+    color:#e8eaf0; font-size:15px; outline:none;
+    -webkit-app-region:no-drag;
+  }
+  input:focus { border-color:#1DB954; box-shadow:0 0 0 3px rgba(29,185,84,0.15); }
+  .hint { font-size:11px; color:#5a6478; text-align:center; }
+  .buttons { display:flex; gap:10px; width:100%; margin-top:4px; }
+  button {
+    flex:1; padding:10px; border:none; border-radius:10px;
+    font-size:13px; font-weight:600; cursor:pointer;
+    -webkit-app-region:no-drag;
+  }
+  .btn-cancel { background:#1e2535; color:#9ba4b5; }
+  .btn-cancel:hover { background:#252f45; }
+  .btn-ok { background:#1DB954; color:#0B0F17; }
+  .btn-ok:hover { background:#17a349; }
+</style>
+</head>
+<body>
+<div class="logo">Finanz<span>Kompass</span></div>
+<h2>${isNew ? 'Lege ein Passwort für deine Datenbank fest.' : 'Bitte gib dein Datenbankpasswort ein.'}</h2>
+${isRetry ? `<div class="error">Falsches Passwort – noch ${attemptsLeft} Versuch${attemptsLeft !== 1 ? 'e' : ''}</div>` : ''}
+<input type="password" id="pw" placeholder="${isNew ? 'Neues Passwort' : 'Passwort'}" autofocus />
+${isNew ? '<div class="hint">Dieses Passwort schützt deine Daten. Bitte gut merken.</div>' : ''}
+<div class="buttons">
+  <button class="btn-cancel" id="cancel">Abbrechen</button>
+  <button class="btn-ok"     id="ok">${isNew ? 'Festlegen' : 'Entsperren'}</button>
+</div>
+<script>
+  const { ipcRenderer } = require('electron');
+  const input = document.getElementById('pw');
+  document.getElementById('ok').onclick = () => {
+    const v = input.value;
+    if (!v) { input.focus(); return; }
+    ipcRenderer.send('pw-result', v);
+  };
+  document.getElementById('cancel').onclick = () => ipcRenderer.send('pw-result', null);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('ok').click();
+    if (e.key === 'Escape') document.getElementById('cancel').click();
+  });
+  setTimeout(() => input.focus(), 80);
+</script>
+</body>
+</html>`;
+
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    win.once('ready-to-show', () => win.show());
+
+    // Einmaliger IPC-Listener — wird nach Antwort sofort entfernt
+    const { ipcMain } = require('electron');
+    const handler = (_, value) => {
+      if (!win.isDestroyed()) win.close();
+      resolve(value);
+    };
+    ipcMain.once('pw-result', handler);
+
+    win.on('closed', () => {
+      ipcMain.removeListener('pw-result', handler);
+      resolve(null);
+    });
+  });
 }
 
 app.whenReady().then(startApp);

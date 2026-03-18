@@ -44,7 +44,7 @@ function getProjectedEndOfMonthBalance() {
   const year  = now.getFullYear();
   const month = now.getMonth() + 1;
   const today = todayISO();
-  const { last } = monthRange(year, month); // letzter Tag des Monats
+  const { last } = monthRange(year, month);
 
   const privateAccounts = db.getAllAccounts().filter(a => (a.account_type || 'private') === 'private');
   const privateIds      = new Set(privateAccounts.map(a => a.id));
@@ -52,11 +52,12 @@ function getProjectedEndOfMonthBalance() {
   // Ausgangspunkt: aktueller Gesamtkontostand aller Privatkonten
   const currentBalance = privateAccounts.reduce((sum, a) => sum + (a.balance ?? 0), 0);
 
-  // Alle aktiven scheduled_transactions laden (ein einziger DB-Call)
+  // Gesamter Disporahmen aller Privatkonten
+  const totalOverdraft = privateAccounts.reduce((sum, a) => sum + (a.overdraft_limit ?? 0), 0);
+
   const scheduled = db.getAllScheduled();
 
   // Filter: heute ≤ next_due_date ≤ Monatsende, nur Privatkonten, aktiv
-  // Umbuchungen (group_id != null) werden separat nach expense/income behandelt
   const remaining = scheduled.filter(s =>
     s.is_active === 1 &&
     privateIds.has(s.account_id) &&
@@ -64,7 +65,6 @@ function getProjectedEndOfMonthBalance() {
     s.next_due_date <= last
   );
 
-  // Einnahmen und Ausgaben getrennt summieren
   const remainingIncome  = remaining
     .filter(s => s.type === 'income')
     .reduce((sum, s) => sum + s.amount, 0);
@@ -73,17 +73,30 @@ function getProjectedEndOfMonthBalance() {
     .filter(s => s.type === 'expense')
     .reduce((sum, s) => sum + s.amount, 0);
 
+  // Projizierter Kontostand (realer Wert, kann negativ sein)
   const projectedBalance = parseFloat(
     (currentBalance + remainingIncome - remainingExpense).toFixed(2)
   );
 
+  // Verfügbares Budget am Monatsende — das geht in die Prognose ein:
+  //   projectedBalance >= 0 → verfügbar = projectedBalance (Dispo irrelevant)
+  //   projectedBalance <  0 → verfügbar = projectedBalance + totalOverdraft
+  //                           (ohne Dispo: totalOverdraft = 0 → gleich wie Kontostand)
+  // Korrekt: kein Dispo → verfügbar = Kontostand auch im Minus (kein Clamp auf 0)
+  const projectedAvailable = projectedBalance < 0
+    ? parseFloat((projectedBalance + totalOverdraft).toFixed(2))
+    : projectedBalance;
+
   return {
-    currentBalance:    parseFloat(currentBalance.toFixed(2)),
-    remainingIncome:   parseFloat(remainingIncome.toFixed(2)),
-    remainingExpense:  parseFloat(remainingExpense.toFixed(2)),
-    projectedBalance,              // Hauptwert für die Prognose
-    endOfMonth:        last,       // Für UI: "Stand am 30.04.2026"
-    scheduledCount:    remaining.length,
+    currentBalance:      parseFloat(currentBalance.toFixed(2)),
+    totalOverdraft:      parseFloat(totalOverdraft.toFixed(2)),
+    remainingIncome:     parseFloat(remainingIncome.toFixed(2)),
+    remainingExpense:    parseFloat(remainingExpense.toFixed(2)),
+    projectedBalance,            // realer Kontostand am Monatsende
+    projectedAvailable,          // inkl. Dispo — geht in Prognose ein
+    usingOverdraft:      projectedBalance < 0 && totalOverdraft > 0,
+    endOfMonth:          last,
+    scheduledCount:      remaining.length,
   };
 }
 
@@ -195,8 +208,9 @@ function getForecastNextMonth() {
     .reduce((sum, s) => sum + s.amount, 0)
     + installmentExpense;
 
-  // Restbudget = Netto nächster Monat + voraussichtlicher Startstand
-  const restbudget = parseFloat((income - expense + projected.projectedBalance).toFixed(2));
+  // Restbudget = Netto nächster Monat + verfügbares Budget am Monatsende
+  // projectedAvailable berücksichtigt Dispo wenn Kontostand < 0
+  const restbudget = parseFloat((income - expense + projected.projectedAvailable).toFixed(2));
 
   return {
     income:              parseFloat(income.toFixed(2)),

@@ -2,11 +2,20 @@
 const path = require('path');
 const fs   = require('fs');
 const { app } = require('electron');
+const { encrypt, decrypt, isEncrypted } = require('../security/encryptionService');
 
 let db;
 let dbPath;
+let _password = null;  // Passwort nur im RAM — niemals auf Disk
 
-function initialize(customDbPath) {
+// ── Passwort-Zugriff ──────────────────────────────────────────────────────
+// Wird von main.js einmal gesetzt, danach intern genutzt.
+function setPassword(pw) { _password = pw; }
+function getPassword()   { return _password; }
+
+function initialize(customDbPath, password) {
+  if (password) _password = password;
+
   const initSqlJs = require('sql.js');
 
   // WASM-Pfad: Im gepackten Build liegt die Datei in resources/ (extraResources).
@@ -16,33 +25,66 @@ function initialize(customDbPath) {
     ? path.join(process.resourcesPath, 'sql-wasm.wasm')
     : path.join(path.dirname(require.resolve('sql.js')), 'sql-wasm.wasm');
 
-  // Bevorzuge den übergebenen Pfad, Fallback auf Standard-AppData
   dbPath = customDbPath || path.join(app.getPath('userData'), 'finanzkompass.db');
+
   return initSqlJs({ locateFile: () => wasmPath }).then(SQL => {
     const Database = SQL.Database;
+
     if (fs.existsSync(dbPath)) {
       const fileBuffer = fs.readFileSync(dbPath);
-      db = new Database(fileBuffer);
+
+      if (isEncrypted(fileBuffer)) {
+        // ── Verschlüsselte DB ─────────────────────────────────────────────
+        // decrypt() wirft bei falschem Passwort → Fehler propagiert zu startApp
+        const decrypted = decrypt(fileBuffer, _password);
+        db = new Database(decrypted);
+        console.log('Datenbank entschlüsselt und geladen:', dbPath);
+      } else {
+        // ── Unverschlüsselte DB erkannt → MIGRATION ───────────────────────
+        // Einmalig: laden, sofort verschlüsselt zurückschreiben, weiterarbeiten.
+        console.log('Migration: unverschlüsselte DB erkannt – verschlüssele…');
+        db = new Database(fileBuffer);
+        db.run('PRAGMA foreign_keys = ON;');
+        createTables();
+        migrateReservesTable();
+        seedCategories();
+        // Sofort verschlüsselt auf Disk schreiben
+        persistInternal();
+        console.log('Migration abgeschlossen: DB ist jetzt verschlüsselt.');
+      }
     } else {
+      // ── Neue DB ────────────────────────────────────────────────────────
       db = new Database();
+      console.log('Neue Datenbank angelegt:', dbPath);
     }
+
     db.run('PRAGMA foreign_keys = ON;');
     createTables();
-    migrateReservesTable(); // Alte Spalten → neue Spalten
+    migrateReservesTable();
     seedCategories();
     persist();
     console.log('Datenbank bereit:', dbPath);
   });
 }
 
-// ── F4: persist() mit Error-Handling ─────────────────────────────────────
-// Schreibt die In-Memory-DB auf Disk. Kein Crash bei gesperrter Datei
-// (z.B. OneDrive-Sync). Fehler werden geloggt, App läuft weiter.
+// ── F4: persist() mit Verschlüsselung + Error-Handling ───────────────────
+// Intern: wird auch von initialize() für Migration aufgerufen.
+function persistInternal() {
+  if (!db || !dbPath) return;
+  const data = db.export();  // Uint8Array der SQLite-Datei
+  if (!_password) {
+    // Kein Passwort gesetzt (sollte nicht passieren) → Sicherheitsfehler
+    throw new Error('Kein Passwort gesetzt — Datenbank wird nicht gespeichert.');
+  }
+  const encrypted = encrypt(data, _password);
+  fs.writeFileSync(dbPath, encrypted);
+}
+
+// Öffentliche persist() — mit Error-Handling, kein Crash bei gesperrter Datei
 function persist() {
   if (!db || !dbPath) return;
   try {
-    const data = db.export();
-    fs.writeFileSync(dbPath, Buffer.from(data));
+    persistInternal();
   } catch (e) {
     console.error('WARNUNG: DB-Speicherung fehlgeschlagen:', e.message);
     // Kein Crash — nächste Operation versucht erneut zu persistieren.
@@ -630,6 +672,7 @@ function deleteInstallment(id) { run('DELETE FROM installments WHERE id = ?', [i
 
 module.exports = {
   initialize,
+  setPassword,
   addMonthsSafe,
   getDbPath: () => dbPath,
   getAllAccounts, createAccount, deleteAccount, updateAccountType, updateAccount,
