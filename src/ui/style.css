@@ -482,6 +482,18 @@ input, select, textarea {
   outline: none;
 }
 
+/* Kalender-Symbol und Spinner bei date/time-Inputs in App-Farbe */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(0.8);
+  cursor: pointer;
+  opacity: 0.7;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
@@ -1977,4 +1989,105 @@ table thead th[onclick]:not(.th-sort-active):hover::after {
   font-size: 10px;
   opacity: 0.3;
   color: var(--text-dim);
+}
+
+/* ── Ratenkauf Summen-Leiste (Seite) ─────────────────────────────────────── */
+.inst-summary-bar {
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+.inst-summary-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.inst-summary-sep {
+  width: 1px;
+  height: 36px;
+  background: var(--border);
+  margin: 0 20px;
+  flex-shrink: 0;
+}
+
+.inst-summary-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.inst-summary-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+
+/* ── Dashboard Ratenkauf-Widget ──────────────────────────────────────────── */
+.ds-inst-summary {
+  display: flex;
+  gap: 0;
+  margin-bottom: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ds-inst-total {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ds-inst-total + .ds-inst-total {
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+  margin-left: 16px;
+}
+
+.ds-inst-total-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.ds-inst-total-value {
+  font-size: 17px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+
+/* Mini-Fortschrittsbalken in Ratenkauf-Zeile im Dashboard */
+.ds-inst-bar-wrap {
+  display: inline-block;
+  width: 32px;
+  height: 4px;
+  background: var(--bg);
+  border-radius: 2px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.ds-inst-bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
 }

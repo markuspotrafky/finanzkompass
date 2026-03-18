@@ -447,7 +447,7 @@ function renderPlaceholderPage(container, page) {
 
 async function renderDashboardPage(container) {
   const data = await window.api.dashboard.getData();
-  const { accounts, budget, forecast, fixedCosts, expensesByCategory } = data;
+  const { accounts, budget, forecast, installmentSummary, expensesByCategory } = data;
 
   const monthNames = ['Januar','Februar','März','April','Mai','Juni',
                       'Juli','August','September','Oktober','November','Dezember'];
@@ -471,17 +471,21 @@ async function renderDashboardPage(container) {
       }).join('')
     : `<div class="ds-empty">Keine Privatkonten angelegt</div>`;
 
-  const MAX_FIXED  = 4;
-  const fixedSlice = fixedCosts.items.slice(0, MAX_FIXED);
-  const fixedMore  = fixedCosts.items.length - MAX_FIXED;
-  const fixedRows  = fixedSlice.length
-    ? fixedSlice.map(s => `
+  // Ratenkauf-Vorschau für Dashboard (max. 3 aktive)
+  const instRows = installmentSummary.preview.length
+    ? installmentSummary.preview.map(i => `
         <div class="ds-row">
-          <span class="ds-row-label">${escHtml(s.description || s.category_name || '–')}</span>
-          <span class="ds-row-value ds-negative">–${formatAmount(s.amount)}</span>
+          <span class="ds-row-label">
+            <span class="ds-inst-bar-wrap">
+              <span class="ds-inst-bar" style="width:${i.progress}%"></span>
+            </span>
+            ${escHtml(i.name)}
+          </span>
+          <span class="ds-row-value" style="font-size:13px;color:var(--text-dim)">${i.paid_months}/${i.total_months}</span>
         </div>`).join('') +
-      (fixedMore > 0 ? `<div class="ds-row-more">+${fixedMore} weitere</div>` : '')
-    : `<div class="ds-empty">Keine Fixkosten diesen Monat</div>`;
+      (installmentSummary.count > 3
+        ? `<div class="ds-row-more">+${installmentSummary.count - 3} weitere</div>` : '')
+    : `<div class="ds-empty">Keine aktiven Ratenkäufe</div>`;
 
   const chartHtml = buildDonutChart(expensesByCategory, monthLabel);
 
@@ -559,14 +563,25 @@ async function renderDashboardPage(container) {
       <!-- ③ DONUT-CHART -->
       ${chartHtml}
 
-      <!-- ④ FIXKOSTEN -->
+      <!-- ④ RATENKÄUFE -->
+      ${installmentSummary.count > 0 ? `
       <div class="ds-card ds-card-flat">
         <div class="ds-card-head">
-          <span class="ds-card-title">Fixkosten diesen Monat</span>
-          <span class="ds-foot-value ds-negative">–${formatAmount(fixedCosts.total)}</span>
+          <span class="ds-card-title">Ratenkäufe</span>
+          <span class="ds-card-tag" style="cursor:pointer" onclick="navigateTo('installments')">${installmentSummary.count} aktiv</span>
         </div>
-        <div class="ds-fixed-grid">${fixedRows}</div>
-      </div>
+        <div class="ds-inst-summary">
+          <div class="ds-inst-total">
+            <span class="ds-inst-total-label">Monatlich</span>
+            <span class="ds-inst-total-value ds-negative">–${formatAmount(installmentSummary.totalMonthlyRate)}</span>
+          </div>
+          <div class="ds-inst-total">
+            <span class="ds-inst-total-label">Noch offen</span>
+            <span class="ds-inst-total-value">${formatAmount(installmentSummary.totalRemaining)}</span>
+          </div>
+        </div>
+        ${instRows}
+      </div>` : ''}
 
     </div>
 
@@ -802,7 +817,7 @@ async function renderAccountsPage(container) {
     <div class="page-header">
       <div>
         <div class="page-title">Konten</div>
-        <div class="page-subtitle">${accounts.length} Konto${accounts.length !== 1 ? 'en' : ''}</div>
+        <div class="page-subtitle">${accounts.length} Konto${accounts.length !== 1 ? 'n' : ''}</div>
       </div>
       <button class="btn btn-primary" onclick="openNewAccountModal()">+ Konto anlegen</button>
     </div>
@@ -1107,7 +1122,11 @@ async function renderTransactionsPage(container, tab) {
         <td class="amount-${s.type}">${s.type === 'income' ? '+' : '–'}${formatAmount(s.amount)}</td>
         <td style="font-size:11.5px;color:var(--text-dim)">${intLabel}</td>
         <td>${statusBadge}</td>
-        <td><button class="table-delete-btn" onclick="deleteScheduled(${s.id}, 'transactions')" title="Löschen">✕</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-right:4px"
+                  onclick="openEditScheduledModal(${s.id}, 'transactions')">Bearbeiten</button>
+          <button class="table-delete-btn" onclick="deleteScheduled(${s.id}, 'transactions')" title="Löschen">✕</button>
+        </td>
       </tr>`;
   }).join('');
 
@@ -1397,6 +1416,113 @@ async function deleteScheduled(id, source = 'transactions') {
   }
 }
 
+// ── Geplante Transaktion / Fixkosten bearbeiten ────────────────────────────
+// Lädt den bestehenden Eintrag und öffnet ein vorausgefülltes Modal.
+// Nach dem Speichern: alten Eintrag löschen + neuen erstellen (kein UPDATE im IPC).
+async function openEditScheduledModal(id, source = 'transactions') {
+  const allScheduled = await window.api.scheduled.getAll();
+  const s = allScheduled.find(x => x.id === id);
+  if (!s) { showNotification('Eintrag nicht gefunden.', 'error'); return; }
+
+  const allAccounts   = await window.api.accounts.getAll();
+  const allCategories = await window.api.categories.getAll();
+
+  const accountOptions = allAccounts.map(a =>
+    `<option value="${a.id}" ${a.id === s.account_id ? 'selected' : ''}>${escHtml(a.name)}</option>`
+  ).join('');
+  const categoryOptions = `<option value="">– Keine Kategorie –</option>` +
+    allCategories.map(c =>
+      `<option value="${c.id}" ${c.id === s.category_id ? 'selected' : ''}>${escHtml(c.name)}</option>`
+    ).join('');
+
+  const intervalVal    = s.interval_months ?? 0;
+  const isScheduled    = true; // immer scheduled
+  const hasInterval    = intervalVal !== 0;
+  const title          = source === 'fixcosts' ? 'Fixkosten bearbeiten' : 'Geplante Transaktion bearbeiten';
+
+  openModal(title, `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Konto</label>
+        <select id="edit-sched-account">${accountOptions}</select>
+      </div>
+      <div class="form-group">
+        <label>Typ</label>
+        <select id="edit-sched-type">
+          <option value="expense" ${s.type === 'expense' ? 'selected' : ''}>Ausgabe</option>
+          <option value="income"  ${s.type === 'income'  ? 'selected' : ''}>Einnahme</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Betrag (€)</label>
+        <input type="text" inputmode="decimal" id="edit-sched-amount"
+               value="${s.amount.toFixed(2).replace('.', ',')}" />
+      </div>
+      <div class="form-group">
+        <label>Nächste Fälligkeit</label>
+        <input type="date" id="edit-sched-date" value="${s.next_due_date}" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Kategorie</label>
+      <select id="edit-sched-category">${categoryOptions}</select>
+    </div>
+    <div class="form-group">
+      <label>Beschreibung</label>
+      <input type="text" id="edit-sched-desc" value="${escHtml(s.description || '')}" />
+    </div>
+    <div class="form-group">
+      <label>Intervall</label>
+      <select id="edit-sched-interval">
+        <option value="0"  ${intervalVal === 0  ? 'selected' : ''}>Einmalig</option>
+        <option value="1"  ${intervalVal === 1  ? 'selected' : ''}>Monatlich</option>
+        <option value="3"  ${intervalVal === 3  ? 'selected' : ''}>Vierteljährlich</option>
+        <option value="6"  ${intervalVal === 6  ? 'selected' : ''}>Halbjährlich</option>
+        <option value="12" ${intervalVal === 12 ? 'selected' : ''}>Jährlich</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Abbrechen</button>
+      <button class="btn btn-primary" onclick="submitEditScheduled(${id}, '${source}')">Speichern</button>
+    </div>
+  `);
+}
+
+async function submitEditScheduled(id, source) {
+  const account_id      = parseInt(document.getElementById('edit-sched-account').value);
+  const type            = document.getElementById('edit-sched-type').value;
+  const amount          = parseAmount(document.getElementById('edit-sched-amount').value);
+  const start_date      = document.getElementById('edit-sched-date').value;
+  const category_id     = parseInt(document.getElementById('edit-sched-category').value) || null;
+  const description     = document.getElementById('edit-sched-desc').value.trim();
+  const intervalVal     = parseInt(document.getElementById('edit-sched-interval').value);
+  const interval_months = intervalVal === 0 ? null : intervalVal;
+
+  if (!isValidAmount(amount)) {
+    showNotification('Bitte einen gültigen Betrag eingeben.', 'error'); return;
+  }
+  if (!start_date) {
+    showNotification('Bitte ein Datum eingeben.', 'error'); return;
+  }
+
+  // Alten Eintrag löschen, neuen mit neuen Werten anlegen
+  await window.api.scheduled.delete(id);
+  await window.api.scheduled.create({
+    account_id, amount, type, category_id, description,
+    start_date, interval_months
+  });
+
+  closeModal();
+  showNotification('Eintrag aktualisiert.');
+  if (source === 'fixcosts') {
+    await renderFixcostsPage(document.getElementById('main-content'));
+  } else {
+    await renderTransactionsPage(document.getElementById('main-content'), 'scheduled');
+  }
+}
+
 // ── Seite: Fixkosten ──────────────────────────────────────────────────────
 // Fixkosten = scheduled_transactions mit interval_months IS NOT NULL
 
@@ -1455,7 +1581,11 @@ async function renderFixcostsPage(container) {
             <td>${label}</td>
             <td>${formatDate(s.next_due_date)}</td>
             <td>${statusBadge}</td>
-            <td><button class="table-delete-btn" onclick="deleteScheduled(${s.id}, 'fixcosts')" title="Löschen">✕</button></td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-right:4px"
+                      onclick="openEditScheduledModal(${s.id}, 'fixcosts')">Bearbeiten</button>
+              <button class="table-delete-btn" onclick="deleteScheduled(${s.id}, 'fixcosts')" title="Löschen">✕</button>
+            </td>
           </tr>`;
       }).join('')
     : `<tr><td colspan="9"><div class="empty-state"><p>Keine Fixkosten für Gemeinschaftskonten gefunden.<br><small style="color:var(--text-muted)">Lege zuerst ein Gemeinschaftskonto an und erstelle dann wiederkehrende Transaktionen dafür.</small></p></div></td></tr>`;
@@ -1788,6 +1918,10 @@ async function renderInstallmentsPage(container) {
       }).join('')
     : `<div class="empty-state"><p>Noch keine Ratenkäufe angelegt.</p></div>`;
 
+  const totalMonthly   = items.filter(i => !i.isComplete).reduce((s, i) => s + i.monthly_rate, 0);
+  const totalAllAmount = items.filter(i => !i.isComplete).reduce((s, i) => s + i.total_amount, 0);
+  const totalRemaining = items.filter(i => !i.isComplete).reduce((s, i) => s + i.remaining, 0);
+
   container.innerHTML = `
     <div class="page-header">
       <div>
@@ -1796,6 +1930,25 @@ async function renderInstallmentsPage(container) {
       </div>
       <button class="btn btn-primary" onclick="openNewInstallmentModal()">+ Ratenkauf anlegen</button>
     </div>
+
+    ${items.filter(i => !i.isComplete).length > 0 ? `
+    <div class="inst-summary-bar">
+      <div class="inst-summary-item">
+        <span class="inst-summary-label">Monatliche Raten</span>
+        <span class="inst-summary-value ds-negative">–${formatAmount(totalMonthly)}</span>
+      </div>
+      <div class="inst-summary-sep"></div>
+      <div class="inst-summary-item">
+        <span class="inst-summary-label">Gesamt (offen)</span>
+        <span class="inst-summary-value">${formatAmount(totalRemaining)}</span>
+      </div>
+      <div class="inst-summary-sep"></div>
+      <div class="inst-summary-item">
+        <span class="inst-summary-label">Gesamt (alle)</span>
+        <span class="inst-summary-value">${formatAmount(totalAllAmount)}</span>
+      </div>
+    </div>` : ''}
+
     <div class="card-grid">${cards}</div>
   `;
 }

@@ -206,12 +206,45 @@ function getExpensesByCategory() {
   return { categories, total, month: `${String(month).padStart(2, '0')}/${year}` };
 }
 
+// ── G) Ratenkauf-Zusammenfassung für Dashboard ────────────────────────────
+function getInstallmentSummary() {
+  const all    = db.getAllInstallments();
+  const active = all.filter(i => i.paid_months < i.total_months);
+
+  const totalMonthlyRate = parseFloat(
+    active.reduce((s, i) => s + i.monthly_rate, 0).toFixed(2)
+  );
+  const totalRemaining = parseFloat(
+    active.reduce((s, i) => s + Math.max(0, i.total_amount - i.paid_months * i.monthly_rate), 0).toFixed(2)
+  );
+  const totalAmount = parseFloat(
+    active.reduce((s, i) => s + i.total_amount, 0).toFixed(2)
+  );
+
+  // Für Dashboard: die 3 nächsten noch nicht abgeschlossenen
+  const preview = active.slice(0, 3).map(i => ({
+    name:        i.name,
+    paid_months: i.paid_months,
+    total_months:i.total_months,
+    progress:    i.total_months > 0 ? Math.round((i.paid_months / i.total_months) * 100) : 0,
+    monthly_rate:i.monthly_rate,
+  }));
+
+  return {
+    count:            active.length,
+    totalMonthlyRate,
+    totalRemaining,
+    totalAmount,
+    preview,
+  };
+}
+
 function getDashboardData() {
   return {
     accounts:           getAccountBalances(),
     budget:             getBudgetCurrentMonth(),
     forecast:           getForecastNextMonth(),
-    fixedCosts:         getFixedCostsCurrentMonth(),
+    installmentSummary: getInstallmentSummary(),
     expensesByCategory: getExpensesByCategory()
   };
 }
