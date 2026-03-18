@@ -991,6 +991,35 @@ select option { background: var(--bg-panel); }
   opacity: 0.75;
 }
 
+/* Projizierter Monatsendstand — leicht abgesetzt vom Rest */
+.ds-row-projected {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255,255,255,0.08);
+  border-bottom: none;
+}
+
+/* "fließt ein" Badge neben dem Label */
+.ds-projected-hint {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Gedämpfte Farbe für neutralen Wert (positiver Monatsendstand) */
+.ds-muted {
+  color: var(--text-dim);
+}
+
 .ds-row-label {
   font-size: 13px;
   color: var(--text-dim);

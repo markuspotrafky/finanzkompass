@@ -11,6 +11,82 @@ function monthRange(year, month) {
   return { first, last };
 }
 
+// ── Hilfsfunktion: Lokales Datum als ISO-String (YYYY-MM-DD) ──────────────
+// Verhindert UTC-Versatz um Mitternacht (z.B. in GMT+1/+2).
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ── H) Prognose Kontostand Monatsende – NUR Privatkonten ─────────────────
+//
+// Berechnet ohne DB-Schreibzugriff den voraussichtlichen Gesamtkontostand
+// aller Privatkonten am letzten Tag des aktuellen Monats.
+//
+// Formel:
+//   projectedBalance = currentBalance
+//                    + Σ(geplante Einnahmen heute..Monatsende)
+//                    - Σ(geplante Ausgaben  heute..Monatsende)
+//                    + Σ(Umbuchungs-Einnahmen heute..Monatsende, Privatkonto)
+//                    - Σ(Umbuchungs-Ausgaben  heute..Monatsende, Privatkonto)
+//
+// "Heute" ist INKLUSIV — Buchungen von heute sind noch nicht gebucht,
+// wenn sie als next_due_date = heute in scheduled stehen.
+// "Letzter Monatstag" ist INKLUSIV.
+//
+// Edge cases:
+//   keine geplanten Buchungen → projectedBalance = currentBalance
+//   negativer Kontostand      → wird korrekt addiert (keine Untergrenze)
+//   Buchung am letzten Tag    → next_due_date <= last → enthalten
+
+function getProjectedEndOfMonthBalance() {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const today = todayISO();
+  const { last } = monthRange(year, month); // letzter Tag des Monats
+
+  const privateAccounts = db.getAllAccounts().filter(a => (a.account_type || 'private') === 'private');
+  const privateIds      = new Set(privateAccounts.map(a => a.id));
+
+  // Ausgangspunkt: aktueller Gesamtkontostand aller Privatkonten
+  const currentBalance = privateAccounts.reduce((sum, a) => sum + (a.balance ?? 0), 0);
+
+  // Alle aktiven scheduled_transactions laden (ein einziger DB-Call)
+  const scheduled = db.getAllScheduled();
+
+  // Filter: heute ≤ next_due_date ≤ Monatsende, nur Privatkonten, aktiv
+  // Umbuchungen (group_id != null) werden separat nach expense/income behandelt
+  const remaining = scheduled.filter(s =>
+    s.is_active === 1 &&
+    privateIds.has(s.account_id) &&
+    s.next_due_date >= today &&
+    s.next_due_date <= last
+  );
+
+  // Einnahmen und Ausgaben getrennt summieren
+  const remainingIncome  = remaining
+    .filter(s => s.type === 'income')
+    .reduce((sum, s) => sum + s.amount, 0);
+
+  const remainingExpense = remaining
+    .filter(s => s.type === 'expense')
+    .reduce((sum, s) => sum + s.amount, 0);
+
+  const projectedBalance = parseFloat(
+    (currentBalance + remainingIncome - remainingExpense).toFixed(2)
+  );
+
+  return {
+    currentBalance:    parseFloat(currentBalance.toFixed(2)),
+    remainingIncome:   parseFloat(remainingIncome.toFixed(2)),
+    remainingExpense:  parseFloat(remainingExpense.toFixed(2)),
+    projectedBalance,              // Hauptwert für die Prognose
+    endOfMonth:        last,       // Für UI: "Stand am 30.04.2026"
+    scheduledCount:    remaining.length,
+  };
+}
+
 // ── A) Kontostände – NUR Privatkonten ─────────────────────────────────────
 
 function getAccountBalances() {
@@ -56,13 +132,13 @@ function getBudgetCurrentMonth() {
 
 // ── C) Prognose nächster Monat – NUR Privatkonten ────────────────────────
 // Enthält:
-//   1. Wiederkehrende geplante Transaktionen ohne Gruppenkennung (bisheriges Verhalten)
+//   1. Wiederkehrende geplante Transaktionen ohne Gruppenkennung
 //   2. Umbuchungsausgaben für Privatkonten (group_id gesetzt, type='expense')
-//   3. Ratenkauf-Raten für Privatkonten (monatliche Rate × noch offene Monate)
+//   3. Ratenkauf-Raten für Privatkonten
+//   4. NEU: Projizierter Kontostand am Monatsende (aus H)
 //
-// Hinweis: Es wird next_due_date des jeweils nächsten Fälligkeitstermins
-// geprüft. Einträge ohne festes Datum im Zielmonat (z.B. interval > 1)
-// werden anhand der Simulations-Fälligkeit einbezogen.
+// Neue Formel:
+//   restbudget = income - expense + projectedEndOfMonthBalance
 
 function getForecastNextMonth() {
   const now       = new Date();
@@ -87,8 +163,6 @@ function getForecastNextMonth() {
   );
 
   // ── 2) Umbuchungsausgaben von Privatkonten ─────────────────────────────
-  // Umbuchungen haben group_id gesetzt. Wir nehmen die Ausgaben-Seite
-  // (type='expense') für Privatkonten die im Zielmonat fällig sind.
   const distExpenses = scheduled.filter(s =>
     s.is_active === 1 &&
     s.group_id !== null &&
@@ -99,14 +173,15 @@ function getForecastNextMonth() {
   );
 
   // ── 3) Ratenkauf-Raten ─────────────────────────────────────────────────
-  // Ratenkäufe haben keinen scheduled_transaction-Eintrag — ihre monatliche
-  // Rate ist fix. Wenn ein Ratenkauf noch nicht abgeschlossen ist und einem
-  // Privatkonto zugeordnet ist, fällt im nächsten Monat eine Rate an.
   const installments = db.getAllInstallments().filter(inst =>
     inst.paid_months < inst.total_months &&
     (!inst.account_id || privateIds.has(inst.account_id))
   );
   const installmentExpense = installments.reduce((sum, inst) => sum + inst.monthly_rate, 0);
+
+  // ── 4) NEU: Projizierter Kontostand Monatsende ─────────────────────────
+  // Wird zur Prognose addiert, weil der nächste Monat mit diesem Stand startet.
+  const projected = getProjectedEndOfMonthBalance();
 
   // ── Zusammenführen ─────────────────────────────────────────────────────
   const allScheduledExpenses = [...singleDue, ...distExpenses];
@@ -120,12 +195,16 @@ function getForecastNextMonth() {
     .reduce((sum, s) => sum + s.amount, 0)
     + installmentExpense;
 
+  // Restbudget = Netto nächster Monat + voraussichtlicher Startstand
+  const restbudget = parseFloat((income - expense + projected.projectedBalance).toFixed(2));
+
   return {
     income:              parseFloat(income.toFixed(2)),
     expense:             parseFloat(expense.toFixed(2)),
     expenseScheduled:    parseFloat(allScheduledExpenses.filter(s => s.type === 'expense').reduce((s, x) => s + x.amount, 0).toFixed(2)),
     expenseInstallments: parseFloat(installmentExpense.toFixed(2)),
-    restbudget:          parseFloat((income - expense).toFixed(2)),
+    restbudget,
+    projected,           // Vollständiges projected-Objekt für die UI
     month:               `${String(nextMonth).padStart(2, '0')}/${year}`
   };
 }

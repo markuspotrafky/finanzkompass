@@ -553,7 +553,7 @@ async function renderDashboardPage(container) {
         <div class="ds-card">
           <div class="ds-card-head">
             <span class="ds-card-title">Kontostände</span>
-            <span class="ds-card-tag">${accounts.length} Konto${accounts.length !== 1 ? 'en' : ''}</span>
+            <span class="ds-card-tag">${accounts.length} Kont${accounts.length !== 1 ? 'en' : 'o'}</span>
           </div>
           <div class="ds-card-body">${accountRows}</div>
           <div class="ds-card-foot">
@@ -581,6 +581,16 @@ async function renderDashboardPage(container) {
               <span class="ds-row-label">davon Ratenkäufe</span>
               <span class="ds-row-value ds-negative" style="font-size:12px">–${formatAmount(forecast.expenseInstallments)}</span>
             </div>` : ''}
+            <div class="ds-row ds-row-projected"
+                 title="Aktueller Stand (${formatAmount(forecast.projected.currentBalance)}) + noch ausstehende Buchungen diesen Monat">
+              <span class="ds-row-label">
+                Stand ${formatDate(forecast.projected.endOfMonth)}
+                <span class="ds-projected-hint">fließt ein</span>
+              </span>
+              <span class="ds-row-value ${forecast.projected.projectedBalance < 0 ? 'ds-negative' : 'ds-muted'}">
+                ${forecast.projected.projectedBalance >= 0 ? '+' : ''}${formatAmount(forecast.projected.projectedBalance)}
+              </span>
+            </div>
           </div>
           <div class="ds-card-foot">
             <span class="ds-foot-label">Restbudget</span>
@@ -863,7 +873,7 @@ async function renderAccountsPage(container) {
     <div class="page-header">
       <div>
         <div class="page-title">Konten</div>
-        <div class="page-subtitle">${accounts.length} Konto${accounts.length !== 1 ? 'n' : ''}</div>
+        <div class="page-subtitle">${accounts.length} Kont${accounts.length !== 1 ? 'en' : 'o'}</div>
       </div>
       <button class="btn btn-primary" onclick="openNewAccountModal()">+ Konto anlegen</button>
     </div>
