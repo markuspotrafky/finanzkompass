@@ -1,0 +1,88 @@
+{
+  "name": "finanzkompass",
+  "version": "1.0.0",
+  "description": "Persönliche Finanzverwaltung",
+  "main": "src/main.js",
+  "author": {
+    "name": "FinanzKompass"
+  },
+  "scripts": {
+    "start":       "electron .",
+    "build:win":   "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win --x64",
+    "build:win32": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win --ia32",
+    "build":       "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "electron-log":     "^5.1.2",
+    "electron-updater": "^6.3.4",
+    "sql.js":           "^1.12.0"
+  },
+  "devDependencies": {
+    "electron":         "^29.1.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId":       "de.finanzkompass.app",
+    "productName": "FinanzKompass",
+
+    "directories": {
+      "output":           "dist",
+      "buildResources":   "assets"
+    },
+
+    "files": [
+      "src/**/*",
+      "assets/icon.*",
+      "!src/**/*.map",
+      "!**/node_modules/.cache/**"
+    ],
+
+    "extraResources": [
+      {
+        "from": "node_modules/sql.js/dist/sql-wasm.wasm",
+        "to":   "sql-wasm.wasm"
+      }
+    ],
+
+    "win": {
+      "target": [
+        { "target": "nsis",     "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon":         "assets/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "sign":         null,
+      "signingHashAlgorithms": null
+    },
+
+    "nsis": {
+      "oneClick":                          false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation":                    true,
+      "installerIcon":                     "assets/icon.ico",
+      "uninstallerIcon":                   "assets/icon.ico",
+      "installerHeaderIcon":               "assets/icon.ico",
+      "createDesktopShortcut":             true,
+      "createStartMenuShortcut":           true,
+      "shortcutName":                      "FinanzKompass",
+      "perMachine":                        false,
+      "deleteAppDataOnUninstall":          false,
+      "displayLanguageSelector":           false,
+      "language":                          "1031"
+    },
+
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+
+    "compression": "maximum",
+
+    "publish": {
+      "provider":            "github",
+      "owner":               "DEIN-GITHUB-USERNAME",
+      "repo":                "finanzkompass",
+      "releaseType":         "release",
+      "publishAutoUpdate":   true
+    }
+  }
+}

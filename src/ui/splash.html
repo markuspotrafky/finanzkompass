@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'" />
+  <title>FinanzKompass</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0B0F17;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    .splash {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 0;
+      position: relative;
+    }
+
+    /* Subtiler grüner Halo im Hintergrund */
+    .splash::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -60%);
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(29,185,84,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .logo-wrap {
+      position: relative;
+      z-index: 1;
+      margin-bottom: 28px;
+      animation: logo-in 0.5s cubic-bezier(0.16,1,0.3,1) both;
+    }
+
+    .logo-wrap img {
+      width: 96px;
+      height: 96px;
+      object-fit: cover;
+      border-radius: 22px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(29,185,84,0.15);
+    }
+
+    @keyframes logo-in {
+      from { opacity: 0; transform: scale(0.85) translateY(12px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .app-name {
+      position: relative;
+      z-index: 1;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #FFFFFF;
+      margin-bottom: 6px;
+      animation: text-in 0.5s 0.1s cubic-bezier(0.16,1,0.3,1) both;
+    }
+
+    .app-name span { color: #1DB954; }
+
+    .app-tagline {
+      position: relative;
+      z-index: 1;
+      font-size: 13px;
+      color: #A0A7B5;
+      font-weight: 400;
+      margin-bottom: 48px;
+      animation: text-in 0.5s 0.15s cubic-bezier(0.16,1,0.3,1) both;
+    }
+
+    @keyframes text-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Fortschrittsbalken */
+    .progress-wrap {
+      position: relative;
+      z-index: 1;
+      width: 220px;
+      animation: text-in 0.5s 0.2s cubic-bezier(0.16,1,0.3,1) both;
+    }
+
+    .progress-track {
+      height: 3px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: #1DB954;
+      border-radius: 2px;
+      transition: width 0.4s cubic-bezier(0.16,1,0.3,1);
+      box-shadow: 0 0 8px rgba(29,185,84,0.5);
+    }
+
+    .progress-label {
+      text-align: center;
+      font-size: 12px;
+      color: #4a5568;
+      letter-spacing: 0.2px;
+      min-height: 16px;
+      transition: opacity 0.2s;
+    }
+
+    /* Version */
+    .version {
+      position: absolute;
+      bottom: 20px;
+      right: 24px;
+      font-size: 11px;
+      color: #2a3350;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="splash">
+    <div class="logo-wrap">
+      <img src="logo.png" alt="FinanzKompass" />
+    </div>
+    <div class="app-name">Finanz<span>Kompass</span></div>
+    <div class="app-tagline">Persönliche Finanzverwaltung</div>
+
+    <div class="progress-wrap">
+      <div class="progress-track">
+        <div class="progress-fill" id="progress"></div>
+      </div>
+      <div class="progress-label" id="label">Starte…</div>
+    </div>
+
+    <div class="version">v1.0.0</div>
+  </div>
+
+  <script>
+    // Fortschritts-Updates vom Main-Prozess empfangen
+    // Der Splash-Screen hat kein preload — Main sendet über webContents.send()
+    // ABER: contextIsolation erfordert preload für ipcRenderer
+    // Lösung: Main setzt window.splashProgress via executeJavaScript
+
+    // Fallback-Animation falls kein Update kommt
+    let currentProgress = 0;
+    const bar   = document.getElementById('progress');
+    const label = document.getElementById('label');
+
+    function setProgress(pct, text) {
+      currentProgress = pct;
+      bar.style.width   = pct + '%';
+      label.textContent = text;
+    }
+
+    // Exponiert für executeJavaScript() aus Main-Prozess
+    window.setProgress = setProgress;
+
+    // Initiale Animation (zeigt sofort Aktivität)
+    setTimeout(() => setProgress(15, 'Datenbank laden…'), 100);
+  </script>
+</body>
+</html>
