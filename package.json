@@ -81,7 +81,7 @@
     "compression": "maximum",
     "publish": {
       "provider": "github",
-      "owner": "DEIN-GITHUB-USERNAME",
+      "owner": "markuspotrafky",
       "repo": "finanzkompass",
       "releaseType": "release",
       "publishAutoUpdate": true
