@@ -1,6 +1,6 @@
 {
   "name": "finanzkompass",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Persönliche Finanzverwaltung",
   "main": "src/main.js",
   "author": {
