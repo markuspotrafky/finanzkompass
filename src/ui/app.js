@@ -549,24 +549,26 @@ async function renderDashboardPage(container) {
               <span class="ds-hero-stat-value ${budget.totalBalance < 0 ? 'ds-negative' : ''}">${formatAmount(budget.totalBalance)}</span>
             </div>
             <div class="ds-hero-sep"></div>
-            <div class="ds-hero-stat">
-              <span class="ds-hero-stat-label">Gebucht Einnahmen</span>
-              <span class="ds-hero-stat-value ds-positive">+${formatAmount(budget.bookedIncome)}</span>
+            <div class="ds-hero-stat-group">
+              <div class="ds-hero-stat">
+                <span class="ds-hero-stat-label">Gebuchte Einnahmen</span>
+                <span class="ds-hero-stat-value ds-positive">+${formatAmount(budget.bookedIncome)}</span>
+              </div>
+              <div class="ds-hero-stat">
+                <span class="ds-hero-stat-label">Geplante Einnahmen</span>
+                <span class="ds-hero-stat-value ds-positive">+${formatAmount(budget.plannedIncome)}</span>
+              </div>
             </div>
             <div class="ds-hero-sep"></div>
-            <div class="ds-hero-stat">
-              <span class="ds-hero-stat-label">Gebucht Ausgaben</span>
-              <span class="ds-hero-stat-value ds-negative">–${formatAmount(budget.bookedExpense)}</span>
-            </div>
-            <div class="ds-hero-sep"></div>
-            <div class="ds-hero-stat">
-              <span class="ds-hero-stat-label">Geplant Einnahmen</span>
-              <span class="ds-hero-stat-value ds-positive">+${formatAmount(budget.plannedIncome)}</span>
-            </div>
-            <div class="ds-hero-sep"></div>
-            <div class="ds-hero-stat">
-              <span class="ds-hero-stat-label">Geplant Ausgaben</span>
-              <span class="ds-hero-stat-value ds-negative">–${formatAmount(budget.plannedExpense)}</span>
+            <div class="ds-hero-stat-group">
+              <div class="ds-hero-stat">
+                <span class="ds-hero-stat-label">Gebuchte Ausgaben</span>
+                <span class="ds-hero-stat-value ds-negative">–${formatAmount(budget.bookedExpense)}</span>
+              </div>
+              <div class="ds-hero-stat">
+                <span class="ds-hero-stat-label">Geplante Ausgaben</span>
+                <span class="ds-hero-stat-value ds-negative">–${formatAmount(budget.plannedExpense)}</span>
+              </div>
             </div>
           </div>
         </div>

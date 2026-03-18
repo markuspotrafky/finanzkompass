@@ -853,6 +853,18 @@ select option { background: var(--bg-panel); }
   padding-right: 32px;
 }
 
+/* Gruppe: zwei Stats untereinander (Gebucht + Geplant) */
+.ds-hero-stat-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 32px;
+}
+
+.ds-hero-stat-group .ds-hero-stat {
+  padding-right: 0;
+}
+
 .ds-hero-sep {
   width: 1px;
   height: 36px;

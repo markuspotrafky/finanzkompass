@@ -243,12 +243,14 @@ function createMainWindow() {
     show: false, backgroundColor: '#0B0F17',
     title: 'FinanzKompass',
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
+    maximized: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false,
     },
   });
   mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'));
+  mainWindow.maximize();
   return mainWindow;
 }
 
