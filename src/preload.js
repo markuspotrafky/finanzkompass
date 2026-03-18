@@ -88,8 +88,13 @@ contextBridge.exposeInMainWorld('api', {
   // ── Auto-Updater ─────────────────────────────────────────────────────────
   // update:downloaded  → { version, releaseNotes }
   // update:installNow  → App beenden + Update installieren
+  //
+  // onUpdateDownloaded: ipcRenderer.once() statt .on() — verhindert doppelten
+  // Banner wenn Seite neu geladen wird (z.B. durch Entwickler-Reload).
   updater: {
     onUpdateDownloaded: (callback) => {
+      // Alte Listener entfernen bevor neuer gesetzt wird (Schutz vor Mehrfach-Banner)
+      ipcRenderer.removeAllListeners('update:downloaded');
       ipcRenderer.on('update:downloaded', (_, info) => callback(info));
     },
     installNow: () => ipcRenderer.invoke('update:installNow'),

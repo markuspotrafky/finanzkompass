@@ -32,55 +32,186 @@ let mainWindow   = null;
 
 // ══════════════════════════════════════════════════════════════════════════
 // AUTO-UPDATER
+//
+// REPARIERTE VERSION — behobene Probleme:
+//   1. package.json owner war "DEIN-GITHUB-USERNAME" → jetzt "markuspotrafky"
+//   2. electron-log wird VOR autoUpdater.logger zugewiesen und vollständig
+//      konfiguriert (Pfad explizit auf app.getPath('userData')/logs/updater.log)
+//   3. autoUpdater.setFeedURL() explizit gesetzt — kein Vertrauen auf asar-Lesefehler
+//   4. allowPrerelease, allowDowngrade explizit gesetzt
+//   5. Fallback-IPC-Handler außerhalb von initAutoUpdater registriert
+//   6. Debug-Modus: UPDATE_DEBUG=1 erlaubt Test im Dev-Modus
 // ══════════════════════════════════════════════════════════════════════════
+
+// Fallback-IPC-Handler — immer registrieren, bevor initAutoUpdater läuft.
+// Verhindert "No handler registered"-Crash wenn Updater-Import fehlschlägt.
+ipcMain.handle('update:installNow', () => {
+  console.warn('[Updater] installNow aufgerufen, aber Updater nicht initialisiert');
+});
+
 function initAutoUpdater() {
-  if (!app.isPackaged) {
-    console.log('[Updater] Entwicklungsmodus — deaktiviert.');
+  // Debug-Modus: UPDATE_DEBUG=1 npm start → läuft auch ohne app.isPackaged
+  const debugMode = process.env.UPDATE_DEBUG === '1';
+
+  if (!app.isPackaged && !debugMode) {
+    console.log('[Updater] Entwicklungsmodus — deaktiviert. (UPDATE_DEBUG=1 zum Testen)');
     return;
   }
+
+  // ── SCHRITT 1: electron-log vollständig initialisieren ────────────────
+  // MUSS vor autoUpdater.logger = log passieren, sonst kein Log-File.
+  let log;
+  try {
+    log = require('electron-log');
+  } catch (e) {
+    console.error('[Updater] electron-log nicht installiert:', e.message);
+    return;
+  }
+
+  // Expliziter Log-Pfad: %APPDATA%\FinanzKompass\logs\updater.log
+  // app.getPath('userData') = C:\Users\<n>\AppData\Roaming\FinanzKompass
+  const logDir  = path.join(app.getPath('userData'), 'logs');
+  const logFile = path.join(logDir, 'updater.log');
+
+  try {
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+  } catch (e) {
+    console.error('[Updater] Log-Ordner konnte nicht erstellt werden:', e.message);
+  }
+
+  log.transports.file.resolvePathFn = () => logFile;
+  log.transports.file.level  = 'debug'; // 'debug' statt 'info' → mehr Infos
+  log.transports.console.level = 'debug';
+  log.info('[Updater] electron-log initialisiert. Logdatei:', logFile);
+
+  // ── SCHRITT 2: electron-updater importieren ───────────────────────────
   let autoUpdater;
   try {
     autoUpdater = require('electron-updater').autoUpdater;
   } catch (e) {
-    console.error('[Updater] nicht gefunden:', e.message);
+    log.error('[Updater] electron-updater nicht installiert:', e.message);
     return;
   }
-  autoUpdater.logger = require('electron-log');
-  autoUpdater.logger.transports.file.level = 'info';
-  autoUpdater.autoDownload         = true;
-  autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('checking-for-update', () => console.log('[Updater] Suche…'));
-  autoUpdater.on('update-available',    (i) => console.log(`[Updater] v${i.version} verfügbar`));
-  autoUpdater.on('update-not-available',(i) => console.log(`[Updater] v${i.version} aktuell`));
-  autoUpdater.on('download-progress',   (p) => console.log(`[Updater] ${Math.round(p.percent)}%`));
-  autoUpdater.on('error',               (e) => console.error('[Updater]', e.message ?? e));
+  // ── SCHRITT 3: Logger zuweisen (nach vollständiger Konfiguration) ──────
+  autoUpdater.logger = log;
+
+  // ── SCHRITT 4: Update-Verhalten konfigurieren ─────────────────────────
+  autoUpdater.autoDownload         = true;  // Hintergrund-Download
+  autoUpdater.autoInstallOnAppQuit = true;  // Installation beim Beenden
+  autoUpdater.allowPrerelease      = false; // Keine Pre-releases
+  autoUpdater.allowDowngrade       = false; // Keine Downgrades
+  autoUpdater.fullChangelog        = false;
+
+  // ── SCHRITT 5: Feed-URL explizit setzen ───────────────────────────────
+  // Nicht auf asar-Package.json-Parsing vertrauen — direkt setzen.
+  // Format: https://github.com/{owner}/{repo}/releases/latest/download
+  try {
+    autoUpdater.setFeedURL({
+      provider:    'github',
+      owner:       'markuspotrafky',
+      repo:        'finanzkompass',
+      releaseType: 'release',
+    });
+    log.info('[Updater] Feed-URL gesetzt: github/markuspotrafky/finanzkompass');
+  } catch (e) {
+    log.error('[Updater] setFeedURL fehlgeschlagen:', e.message);
+    // Nicht abbrechen — electron-updater liest ggf. trotzdem aus package.json
+  }
+
+  // ── SCHRITT 6: Events registrieren ───────────────────────────────────
+  autoUpdater.on('checking-for-update', () => {
+    log.info('[Updater] Suche nach Updates…');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    log.info(`[Updater] Update verfügbar: v${info.version} (aktuell: v${app.getVersion()})`);
+    log.info('[Updater] Download startet automatisch im Hintergrund…');
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    log.info(`[Updater] Kein Update — v${info.version} ist die aktuelle Version.`);
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    log.debug(`[Updater] Download: ${Math.round(progress.percent)}% ` +
+      `(${Math.round(progress.transferred / 1024)} KB / ${Math.round(progress.total / 1024)} KB, ` +
+      `${Math.round(progress.bytesPerSecond / 1024)} KB/s)`);
+  });
 
   autoUpdater.on('update-downloaded', (info) => {
-    console.log(`[Updater] v${info.version} heruntergeladen`);
-    const send = () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('update:downloaded', {
-          version: info.version, releaseNotes: info.releaseNotes || null,
-        });
-      }
+    log.info(`[Updater] Update v${info.version} vollständig heruntergeladen — bereit zur Installation.`);
+
+    // ── SCHRITT 7: Renderer benachrichtigen ──────────────────────────────
+    // Fenster könnte noch nicht offen sein → mit Retry senden
+    const payload = {
+      version:      info.version,
+      releaseNotes: info.releaseNotes || null,
     };
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      send();
-    } else {
-      const t = setInterval(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) { clearInterval(t); setTimeout(send, 1500); }
+
+    const sendToRenderer = () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update:downloaded', payload);
+        log.info('[Updater] Banner-Event an Renderer gesendet.');
+        return true;
+      }
+      return false;
+    };
+
+    if (!sendToRenderer()) {
+      // Fenster noch nicht bereit → alle 500ms nochmal versuchen (max. 30s)
+      let attempts = 0;
+      const retry = setInterval(() => {
+        attempts++;
+        if (sendToRenderer() || attempts > 60) clearInterval(retry);
       }, 500);
     }
   });
 
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(e =>
-      console.error('[Updater] checkForUpdates:', e.message ?? e)
-    );
-  }, 5000);
+  autoUpdater.on('error', (err) => {
+    // Detailliertes Logging — häufige Ursachen:
+    // - Kein Netzwerk
+    // - owner/repo falsch → 404
+    // - latest.yml fehlt im Release
+    log.error('[Updater] FEHLER:', err.message ?? err);
+    log.error('[Updater] Stack:', err.stack ?? 'kein Stack');
 
-  ipcMain.handle('update:installNow', () => autoUpdater.quitAndInstall(false, true));
+    // Nutzer NICHT mit Dialog stören — nur loggen
+    // (Netzwerkfehler sind normal wenn offline)
+  });
+
+  // ── SCHRITT 8: IPC-Handler überschreiben mit funktionierendem autoUpdater ─
+  // Überschreibt den Fallback-Handler von oben
+  try {
+    ipcMain.removeHandler('update:installNow');
+  } catch (_) {}
+
+  ipcMain.handle('update:installNow', () => {
+    log.info('[Updater] Nutzer hat Installation angefordert — quitAndInstall…');
+    autoUpdater.quitAndInstall(
+      false, // silent: false = zeigt Installer-Fenster (für NSIS-Installer)
+      true   // forceRunAfter: true = App startet nach Install neu
+    );
+  });
+
+  // ── SCHRITT 9: Update-Check starten ─────────────────────────────────
+  // 5s Verzögerung: App vollständig geladen, Netzwerk verfügbar
+  const delay = debugMode ? 3000 : 5000;
+  setTimeout(() => {
+    log.info('[Updater] Starte checkForUpdates()…');
+    autoUpdater
+      .checkForUpdates()
+      .then(result => {
+        if (result) {
+          log.info('[Updater] checkForUpdates abgeschlossen:', result.updateInfo?.version ?? 'kein Ergebnis');
+        }
+      })
+      .catch(err => {
+        log.error('[Updater] checkForUpdates fehlgeschlagen:', err.message ?? err);
+      });
+  }, delay);
+
+  log.info(`[Updater] Initialisierung abgeschlossen. Update-Check in ${delay / 1000}s.`);
 }
 
 // ── Splash Screen ─────────────────────────────────────────────────────────
@@ -194,6 +325,7 @@ async function startApp() {
       }, 1000);
     }
 
+    // Auto-Updater NACH vollständigem Laden — blockiert nichts
     initAutoUpdater();
 
   } catch (e) {
@@ -290,4 +422,3 @@ ipcMain.handle('window:focus', () => {
     }, 30);
   }
 });
-// Hinweis: ipcMain.handle('update:installNow') ist in initAutoUpdater() registriert

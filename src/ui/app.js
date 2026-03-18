@@ -2811,12 +2811,16 @@ function showStartupBanner(count) {
 
 // ── Update-Banner ─────────────────────────────────────────────────────────
 // Erscheint wenn electron-updater ein Update heruntergeladen hat.
-// Bleibt sichtbar bis der Nutzer reagiert — Update ist wichtig.
+// Bleibt sichtbar bis der Nutzer reagiert — wird NIE automatisch geschlossen.
 // "Jetzt neu starten" → quitAndInstall() → sofortige Installation.
-// "Später" → Banner schließen, Update wird beim nächsten normalen Start installiert.
+// "Später" → Banner schließen, Update wird beim nächsten Beenden auto-installiert.
 function showUpdateBanner(version) {
+  // Doppelten Banner verhindern
   const existing = document.getElementById('update-banner');
   if (existing) existing.remove();
+
+  // Version validieren (Schutz gegen undefined/null)
+  const safeVersion = version ? escHtml(String(version)) : '(unbekannt)';
 
   const banner = document.createElement('div');
   banner.id        = 'update-banner';
@@ -2825,14 +2829,16 @@ function showUpdateBanner(version) {
     <div class="update-banner-content">
       <span class="update-banner-icon">↑</span>
       <div class="update-banner-text">
-        <strong>Update v${escHtml(version)} bereit</strong>
-        <span>Heruntergeladen und bereit zur Installation.</span>
+        <strong>Update v${safeVersion} bereit</strong>
+        <span>Heruntergeladen — wird beim Beenden automatisch installiert.</span>
       </div>
       <div class="update-banner-actions">
         <button class="update-banner-btn-install" onclick="installUpdateNow()">
           Jetzt neu starten
         </button>
-        <button class="update-banner-btn-later" onclick="this.closest('#update-banner').remove()" title="Später installieren">
+        <button class="update-banner-btn-later"
+                onclick="this.closest('#update-banner').remove()"
+                title="Beim nächsten Beenden installieren">
           Später
         </button>
       </div>
