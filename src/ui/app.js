@@ -481,25 +481,40 @@ async function renderDashboardPage(container) {
   const nextMonthYear  = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
   const nextMonthLabel = `${monthNames[nextMonthIdx]} ${nextMonthYear}`;
 
-  const heroValueClass = budget.restbudget >= 0 ? 'ds-hero-value ds-positive' : 'ds-hero-value ds-negative';
+  const heroValueClass = budget.totalRestbudget >= 0 ? 'ds-hero-value ds-positive' : 'ds-hero-value ds-negative';
 
-  // Kontostände mit Farb-Punkt und ggf. Verfügbar-Betrag
-  const accountRows = accounts.length
-    ? accounts.map(a => {
-        const dot       = `<span class="ds-row-dot" style="background:${a.color || '#4d9fff'}"></span>`;
-        const available = getAvailableBalance(a.balance, a.overdraft_limit);
-        const showAvail = a.overdraft_limit > 0 && a.balance < 0;
-        const availHtml = showAvail
-          ? `<span class="ds-avail-badge ${available >= 0 ? 'ds-avail-pos' : 'ds-avail-neg'}"
-                  title="Verfügbar inkl. Dispo (${formatAmount(a.overdraft_limit)})">${formatAmount(available)}</span>`
-          : '';
-        return `
-          <div class="ds-row">
-            <span class="ds-row-label">${dot}${escHtml(a.name)}${availHtml}</span>
-            <span class="ds-row-value ${a.balance < 0 ? 'ds-negative' : ''}">${formatAmount(a.balance)}</span>
-          </div>`;
-      }).join('')
-    : `<div class="ds-empty">Keine Privatkonten angelegt</div>`;
+  // ── Übersichtstabelle: Kontostand + Restbudget pro Konto + Gesamt ─────────
+  const tableRows = budget.perAccount.map(a => {
+    const available  = getAvailableBalance(a.balance, a.overdraft);
+    const showAvail  = a.overdraft > 0 && a.balance < 0;
+    const restClass  = a.restbudget >= 0 ? 'ds-positive' : 'ds-negative';
+    const balClass   = a.balance    >= 0 ? '' : 'ds-negative';
+    return `
+      <tr class="ov-body-row">
+        <td class="ov-name">
+          <span class="ov-dot" style="background:${a.color}"></span>
+          ${escHtml(a.name)}
+        </td>
+        <td class="ov-num ${balClass}">${formatAmount(a.balance)}</td>
+        <td class="ov-num ${a.balance < 0 && a.overdraft > 0 ? (available >= 0 ? 'ds-positive' : 'ds-negative') : 'ov-dim'}">
+          ${showAvail ? formatAmount(available) : '–'}
+        </td>
+        <td class="ov-num ds-positive">${a.bookedIn > 0 ? '+' + formatAmount(a.bookedIn) : '–'}</td>
+        <td class="ov-num ds-negative">${a.bookedOut > 0 ? '–' + formatAmount(a.bookedOut) : '–'}</td>
+        <td class="ov-num ds-positive">${a.plannedIn > 0 ? '+' + formatAmount(a.plannedIn) : '–'}</td>
+        <td class="ov-num ds-negative">${(a.plannedOut + a.instStillDue) > 0 ? '–' + formatAmount(a.plannedOut + a.instStillDue) : '–'}</td>
+        <td class="ov-num ov-restbudget ${restClass}">${formatAmount(a.restbudget)}</td>
+      </tr>`;
+  }).join('');
+
+  const totalAvail      = getAvailableBalance(budget.totalBalance, budget.perAccount.reduce((s,a) => s + a.overdraft, 0));
+  const totalBookedIn   = budget.perAccount.reduce((s,a) => s + a.bookedIn,   0);
+  const totalBookedOut  = budget.perAccount.reduce((s,a) => s + a.bookedOut,  0);
+  const totalPlannedIn  = budget.perAccount.reduce((s,a) => s + a.plannedIn,  0);
+  const totalPlannedOut = budget.perAccount.reduce((s,a) => s + (a.plannedOut + a.instStillDue), 0);
+  const totalHasOverdraft = budget.perAccount.some(a => a.overdraft > 0 && a.balance < 0);
+  const totalRestClass  = budget.totalRestbudget >= 0 ? 'ds-positive' : 'ds-negative';
+  const totalBalClass   = budget.totalBalance    >= 0 ? '' : 'ds-negative';
 
   // Ratenkauf-Vorschau für Dashboard (max. 3 aktive)
   const instRows = installmentSummary.preview.length
@@ -527,40 +542,80 @@ async function renderDashboardPage(container) {
         <div class="ds-hero-glow"></div>
         <div class="ds-hero-content">
           <p class="ds-hero-label">Restbudget · ${monthLabel}</p>
-          <p class="${heroValueClass}">${formatAmount(budget.restbudget)}</p>
+          <p class="${heroValueClass}">${formatAmount(budget.totalRestbudget)}</p>
           <div class="ds-hero-stats">
             <div class="ds-hero-stat">
               <span class="ds-hero-stat-label">Kontostand</span>
-              <span class="ds-hero-stat-value">${formatAmount(budget.totalBalance)}</span>
+              <span class="ds-hero-stat-value ${budget.totalBalance < 0 ? 'ds-negative' : ''}">${formatAmount(budget.totalBalance)}</span>
             </div>
             <div class="ds-hero-sep"></div>
             <div class="ds-hero-stat">
-              <span class="ds-hero-stat-label">Einnahmen</span>
+              <span class="ds-hero-stat-label">Gebucht Einnahmen</span>
+              <span class="ds-hero-stat-value ds-positive">+${formatAmount(budget.bookedIncome)}</span>
+            </div>
+            <div class="ds-hero-sep"></div>
+            <div class="ds-hero-stat">
+              <span class="ds-hero-stat-label">Gebucht Ausgaben</span>
+              <span class="ds-hero-stat-value ds-negative">–${formatAmount(budget.bookedExpense)}</span>
+            </div>
+            <div class="ds-hero-sep"></div>
+            <div class="ds-hero-stat">
+              <span class="ds-hero-stat-label">Geplant Einnahmen</span>
               <span class="ds-hero-stat-value ds-positive">+${formatAmount(budget.plannedIncome)}</span>
             </div>
             <div class="ds-hero-sep"></div>
             <div class="ds-hero-stat">
-              <span class="ds-hero-stat-label">Ausgaben</span>
+              <span class="ds-hero-stat-label">Geplant Ausgaben</span>
               <span class="ds-hero-stat-value ds-negative">–${formatAmount(budget.plannedExpense)}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ② SEKUNDÄR-REIHE -->
-      <div class="ds-row-grid">
-
-        <div class="ds-card">
-          <div class="ds-card-head">
-            <span class="ds-card-title">Kontostände</span>
-            <span class="ds-card-tag">${accounts.length} Kont${accounts.length !== 1 ? 'en' : 'o'}</span>
-          </div>
-          <div class="ds-card-body">${accountRows}</div>
-          <div class="ds-card-foot">
-            <span class="ds-foot-label">Gesamt</span>
-            <span class="ds-foot-value ${budget.totalBalance < 0 ? 'ds-negative' : ''}">${formatAmount(budget.totalBalance)}</span>
-          </div>
+      <!-- ② ÜBERSICHTSTABELLE -->
+      <div class="ds-overview-wrap">
+        <div class="ds-overview-head">
+          <span class="ds-overview-title">Übersicht ${monthLabel}</span>
+          <span class="ds-overview-legend">
+            <span class="ds-legend-dot ds-legend-booked"></span>Gebucht&ensp;
+            <span class="ds-legend-dot ds-legend-planned"></span>Geplant (noch ausstehend)
+          </span>
         </div>
+        <div class="table-wrapper ds-overview-table-wrap">
+          <table class="ds-overview-table">
+            <thead>
+              <tr>
+                <th class="ov-th-name">Konto</th>
+                <th class="ov-th-num">Kontostand</th>
+                <th class="ov-th-num">Verfügbar</th>
+                <th class="ov-th-num ov-booked">+ Einnahmen</th>
+                <th class="ov-th-num ov-booked">– Ausgaben</th>
+                <th class="ov-th-num ov-planned">+ Geplant</th>
+                <th class="ov-th-num ov-planned">– Geplant</th>
+                <th class="ov-th-num ov-th-rest">Restbudget</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+              <tr class="ov-total-row">
+                <td class="ov-name ov-total-label">Gesamt</td>
+                <td class="ov-num ${totalBalClass}">${formatAmount(budget.totalBalance)}</td>
+                <td class="ov-num ${totalHasOverdraft ? (totalAvail >= 0 ? 'ds-positive' : 'ds-negative') : 'ov-dim'}">
+                  ${totalHasOverdraft ? formatAmount(totalAvail) : '–'}
+                </td>
+                <td class="ov-num ds-positive">${totalBookedIn  > 0 ? '+' + formatAmount(totalBookedIn)  : '–'}</td>
+                <td class="ov-num ds-negative">${totalBookedOut > 0 ? '–' + formatAmount(totalBookedOut) : '–'}</td>
+                <td class="ov-num ds-positive">${totalPlannedIn  > 0 ? '+' + formatAmount(totalPlannedIn)  : '–'}</td>
+                <td class="ov-num ds-negative">${totalPlannedOut > 0 ? '–' + formatAmount(totalPlannedOut) : '–'}</td>
+                <td class="ov-num ov-restbudget ${totalRestClass}">${formatAmount(budget.totalRestbudget)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ③ PROGNOSE + DONUT -->
+      <div class="ds-row-grid">
 
         <div class="ds-card">
           <div class="ds-card-head">
@@ -600,10 +655,9 @@ async function renderDashboardPage(container) {
           </div>
         </div>
 
-      </div>
+        ${chartHtml ? `<div>${chartHtml}</div>` : ''}
 
-      <!-- ③ DONUT-CHART -->
-      ${chartHtml}
+      </div>
 
       <!-- ④ RATENKÄUFE -->
       ${installmentSummary.count > 0 ? `

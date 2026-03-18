@@ -2202,3 +2202,163 @@ table thead th[onclick]:not(.th-sort-active):hover::after {
   background: var(--accent);
   border-radius: 2px;
 }
+
+/* ── Dashboard Übersichtstabelle ─────────────────────────────────────────── */
+.ds-overview-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.ds-overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ds-overview-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.ds-overview-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ds-legend-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ds-legend-booked  { background: var(--accent); }
+.ds-legend-planned { background: rgba(255,193,69,0.7); }
+
+.ds-overview-table-wrap {
+  overflow-x: auto;
+  margin: 0;
+}
+
+/* Tabelle: Überschreibe globales table-CSS für diese spezifische Tabelle */
+.ds-overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: auto;
+}
+
+.ds-overview-table thead th {
+  background: transparent;
+  padding: 9px 16px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* Gebucht-Spalten: leicht grünliche Tönung im Header */
+.ds-overview-table .ov-booked {
+  color: rgba(29,185,84,0.6) !important;
+}
+
+/* Geplant-Spalten: leicht gelbliche Tönung im Header */
+.ds-overview-table .ov-planned {
+  color: rgba(255,193,69,0.6) !important;
+}
+
+/* Restbudget-Spalte: heller */
+.ds-overview-table .ov-th-rest {
+  color: var(--text-dim) !important;
+}
+
+.ds-overview-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.ds-overview-table tbody tr:hover { background: var(--bg-hover); }
+.ds-overview-table tbody tr:last-child { border-bottom: none; }
+
+/* Zeilen-Zellen */
+.ov-name {
+  padding: 13px 16px;
+  color: var(--text);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  max-width: none !important; /* Überschreibe globales td max-width */
+}
+
+.ov-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ov-num {
+  padding: 13px 16px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 13px;
+  text-align: right;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+  max-width: none !important;
+  overflow: visible !important;
+}
+
+.ov-dim { color: var(--text-muted); }
+
+.ov-restbudget {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Gesamt-Zeile */
+.ov-total-row {
+  background: rgba(255,255,255,0.025) !important;
+  border-top: 2px solid rgba(255,255,255,0.08) !important;
+}
+
+.ov-total-label {
+  font-weight: 700 !important;
+  color: var(--text-dim) !important;
+  text-transform: uppercase;
+  font-size: 11px !important;
+  letter-spacing: 0.4px;
+}
+
+/* Trennlinie zwischen Gebucht- und Geplant-Gruppe */
+.ds-overview-table thead th.ov-booked:first-of-type,
+.ds-overview-table .ov-num:nth-child(4) {
+  border-left: 1px solid rgba(29,185,84,0.15);
+}
+.ds-overview-table thead th.ov-planned:first-of-type,
+.ds-overview-table .ov-num:nth-child(6) {
+  border-left: 1px solid rgba(255,193,69,0.15);
+}
+.ds-overview-table thead th.ov-th-rest,
+.ds-overview-table .ov-restbudget {
+  border-left: 1px solid rgba(255,255,255,0.08);
+}

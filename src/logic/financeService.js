@@ -40,24 +40,21 @@ function todayISO() {
 //   Buchung am letzten Tag    → next_due_date <= last → enthalten
 
 function getProjectedEndOfMonthBalance() {
-  const now   = new Date();
-  const year  = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const today = todayISO();
+  const now      = new Date();
+  const year     = now.getFullYear();
+  const month    = now.getMonth() + 1;
+  const today    = todayISO();
+  const todayDay = now.getDate();
   const { last } = monthRange(year, month);
 
   const privateAccounts = db.getAllAccounts().filter(a => (a.account_type || 'private') === 'private');
   const privateIds      = new Set(privateAccounts.map(a => a.id));
 
-  // Ausgangspunkt: aktueller Gesamtkontostand aller Privatkonten
   const currentBalance = privateAccounts.reduce((sum, a) => sum + (a.balance ?? 0), 0);
-
-  // Gesamter Disporahmen aller Privatkonten
   const totalOverdraft = privateAccounts.reduce((sum, a) => sum + (a.overdraft_limit ?? 0), 0);
 
+  // ── 1) Geplante Transaktionen (Fixkosten + einmalige + Umbuchungen) ───────
   const scheduled = db.getAllScheduled();
-
-  // Filter: heute ≤ next_due_date ≤ Monatsende, nur Privatkonten, aktiv
   const remaining = scheduled.filter(s =>
     s.is_active === 1 &&
     privateIds.has(s.account_id) &&
@@ -65,38 +62,50 @@ function getProjectedEndOfMonthBalance() {
     s.next_due_date <= last
   );
 
-  const remainingIncome  = remaining
+  const scheduledIncome  = remaining
     .filter(s => s.type === 'income')
     .reduce((sum, s) => sum + s.amount, 0);
-
-  const remainingExpense = remaining
+  const scheduledExpense = remaining
     .filter(s => s.type === 'expense')
     .reduce((sum, s) => sum + s.amount, 0);
 
-  // Projizierter Kontostand (realer Wert, kann negativ sein)
+  // ── 2) Ratenkäufe aus der installments-Tabelle ────────────────────────────
+  // Ratenkäufe sind NICHT in scheduled_transactions gespeichert — sie haben
+  // eine eigene Tabelle mit deduction_day (Abbuchungstag im Monat).
+  // Wir berechnen welche Raten im aktuellen Monat noch NICHT abgebucht wurden:
+  //   deduction_day >= heute → noch ausstehend diesen Monat
+  // Nur aktive (paid_months < total_months), nur Privatkonten.
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const installments   = db.getAllInstallments();
+
+  const installmentExpense = installments
+    .filter(i =>
+      i.paid_months < i.total_months &&
+      (!i.account_id || privateIds.has(i.account_id)) &&
+      Math.min(i.deduction_day, lastDayOfMonth) >= todayDay   // noch nicht abgebucht
+    )
+    .reduce((sum, i) => sum + i.monthly_rate, 0);
+
+  // ── Projizierter Kontostand ───────────────────────────────────────────────
   const projectedBalance = parseFloat(
-    (currentBalance + remainingIncome - remainingExpense).toFixed(2)
+    (currentBalance + scheduledIncome - scheduledExpense - installmentExpense).toFixed(2)
   );
 
-  // Verfügbares Budget am Monatsende — das geht in die Prognose ein:
-  //   projectedBalance >= 0 → verfügbar = projectedBalance (Dispo irrelevant)
-  //   projectedBalance <  0 → verfügbar = projectedBalance + totalOverdraft
-  //                           (ohne Dispo: totalOverdraft = 0 → gleich wie Kontostand)
-  // Korrekt: kein Dispo → verfügbar = Kontostand auch im Minus (kein Clamp auf 0)
   const projectedAvailable = projectedBalance < 0
     ? parseFloat((projectedBalance + totalOverdraft).toFixed(2))
     : projectedBalance;
 
   return {
-    currentBalance:      parseFloat(currentBalance.toFixed(2)),
-    totalOverdraft:      parseFloat(totalOverdraft.toFixed(2)),
-    remainingIncome:     parseFloat(remainingIncome.toFixed(2)),
-    remainingExpense:    parseFloat(remainingExpense.toFixed(2)),
-    projectedBalance,            // realer Kontostand am Monatsende
-    projectedAvailable,          // inkl. Dispo — geht in Prognose ein
-    usingOverdraft:      projectedBalance < 0 && totalOverdraft > 0,
-    endOfMonth:          last,
-    scheduledCount:      remaining.length,
+    currentBalance:       parseFloat(currentBalance.toFixed(2)),
+    totalOverdraft:       parseFloat(totalOverdraft.toFixed(2)),
+    remainingIncome:      parseFloat(scheduledIncome.toFixed(2)),
+    remainingExpense:     parseFloat((scheduledExpense + installmentExpense).toFixed(2)),
+    remainingInstallments:parseFloat(installmentExpense.toFixed(2)),
+    projectedBalance,
+    projectedAvailable,
+    usingOverdraft:       projectedBalance < 0 && totalOverdraft > 0,
+    endOfMonth:           last,
+    scheduledCount:       remaining.length + (installmentExpense > 0 ? 1 : 0),
   };
 }
 
@@ -108,21 +117,23 @@ function getAccountBalances() {
 }
 
 // ── B) Restbudget aktueller Monat – NUR Privatkonten ─────────────────────
+// Liefert Gesamtwerte UND pro-Konto-Aufschlüsselung für die Dashboard-Tabelle.
 
 function getBudgetCurrentMonth() {
   const now   = new Date();
   const year  = now.getFullYear();
   const month = now.getMonth() + 1;
+  const today = todayISO();
   const { first, last } = monthRange(year, month);
 
-  // Nur Privatkonten
   const privateAccounts = db.getAllAccounts().filter(a => (a.account_type || 'private') === 'private');
   const privateIds      = new Set(privateAccounts.map(a => a.id));
+  const totalBalance    = privateAccounts.reduce((sum, a) => sum + (a.balance ?? 0), 0);
 
-  const totalBalance = privateAccounts.reduce((sum, a) => sum + (a.balance ?? 0), 0);
+  const scheduled    = db.getAllScheduled();
+  const transactions = db.getAllTransactions();
 
-  // Geplante Transaktionen nur für Privatkonten, OHNE Verteilungseinträge
-  const scheduled = db.getAllScheduled();
+  // ── Geplante Transaktionen diesen Monat (noch nicht gebucht) ─────────────
   const dueThisMonth = scheduled.filter(s =>
     s.is_active === 1 &&
     s.group_id === null &&
@@ -131,14 +142,69 @@ function getBudgetCurrentMonth() {
     s.next_due_date <= last
   );
 
-  const plannedIncome  = dueThisMonth.filter(s => s.type === 'income').reduce((sum, s) => sum + s.amount, 0);
-  const plannedExpense = dueThisMonth.filter(s => s.type === 'expense').reduce((sum, s) => sum + s.amount, 0);
+  // ── Bereits gebuchte Transaktionen diesen Monat ───────────────────────────
+  const bookedThisMonth = transactions.filter(t =>
+    (t.type === 'income' || t.type === 'expense') &&
+    privateIds.has(t.account_id) &&
+    t.date >= first &&
+    t.date <= last
+  );
+
+  // ── Ratenkäufe: noch ausstehend diesen Monat ─────────────────────────────
+  const todayDay       = now.getDate();
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const installments   = db.getAllInstallments();
+
+  // ── Gesamt-Aggregation ───────────────────────────────────────────────────
+  const plannedIncome   = dueThisMonth.filter(s => s.type === 'income') .reduce((sum, s) => sum + s.amount, 0);
+  const plannedExpense  = dueThisMonth.filter(s => s.type === 'expense').reduce((sum, s) => sum + s.amount, 0);
+  const bookedIncome    = bookedThisMonth.filter(t => t.type === 'income') .reduce((sum, t) => sum + t.amount, 0);
+  const bookedExpense   = bookedThisMonth.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+
+  // ── Pro-Konto-Aufschlüsselung ─────────────────────────────────────────────
+  const perAccount = privateAccounts.map(a => {
+    const instStillDue = installments
+      .filter(i =>
+        i.paid_months < i.total_months &&
+        i.account_id === a.id &&
+        Math.min(i.deduction_day, lastDayOfMonth) >= todayDay
+      )
+      .reduce((sum, i) => sum + i.monthly_rate, 0);
+
+    const plannedIn  = dueThisMonth.filter(s => s.account_id === a.id && s.type === 'income') .reduce((sum, s) => sum + s.amount, 0);
+    const plannedOut = dueThisMonth.filter(s => s.account_id === a.id && s.type === 'expense').reduce((sum, s) => sum + s.amount, 0);
+    const bookedIn   = bookedThisMonth.filter(t => t.account_id === a.id && t.type === 'income') .reduce((sum, t) => sum + t.amount, 0);
+    const bookedOut  = bookedThisMonth.filter(t => t.account_id === a.id && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+
+    // Restbudget = Kontostand + geplante Einnahmen - geplante Ausgaben - ausstehende Raten
+    const restbudget = parseFloat((a.balance + plannedIn - plannedOut - instStillDue).toFixed(2));
+
+    return {
+      id:           a.id,
+      name:         a.name,
+      color:        a.color || '#4d9fff',
+      balance:      parseFloat((a.balance ?? 0).toFixed(2)),
+      overdraft:    a.overdraft_limit ?? 0,
+      plannedIn:    parseFloat(plannedIn.toFixed(2)),
+      plannedOut:   parseFloat(plannedOut.toFixed(2)),
+      bookedIn:     parseFloat(bookedIn.toFixed(2)),
+      bookedOut:    parseFloat(bookedOut.toFixed(2)),
+      instStillDue: parseFloat(instStillDue.toFixed(2)),
+      restbudget,
+    };
+  });
+
+  const totalRestbudget = parseFloat(perAccount.reduce((sum, a) => sum + a.restbudget, 0).toFixed(2));
 
   return {
     totalBalance,
-    plannedIncome,
-    plannedExpense,
-    restbudget: totalBalance + plannedIncome - plannedExpense,
+    plannedIncome:  parseFloat(plannedIncome.toFixed(2)),
+    plannedExpense: parseFloat(plannedExpense.toFixed(2)),
+    bookedIncome:   parseFloat(bookedIncome.toFixed(2)),
+    bookedExpense:  parseFloat(bookedExpense.toFixed(2)),
+    restbudget:     totalBalance + plannedIncome - plannedExpense,
+    totalRestbudget,
+    perAccount,
     month: `${String(month).padStart(2, '0')}/${year}`
   };
 }
