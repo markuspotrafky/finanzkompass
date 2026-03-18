@@ -471,14 +471,6 @@ async function renderDashboardPage(container) {
       }).join('')
     : `<div class="ds-empty">Keine Privatkonten angelegt</div>`;
 
-  // Prognose-Trend: Pfeil zeigt ob besser/schlechter als aktueller Monat
-  const trendDiff   = forecast.restbudget - budget.restbudget;
-  const trendArrow  = trendDiff > 0 ? '↑' : trendDiff < 0 ? '↓' : '→';
-  const trendClass  = trendDiff > 0 ? 'ds-positive' : trendDiff < 0 ? 'ds-negative' : '';
-  const trendLabel  = trendDiff !== 0
-    ? `<span class="${trendClass}" style="font-size:11px;font-weight:700;margin-left:4px">${trendArrow} ${formatAmount(Math.abs(trendDiff))}</span>`
-    : '';
-
   const MAX_FIXED  = 4;
   const fixedSlice = fixedCosts.items.slice(0, MAX_FIXED);
   const fixedMore  = fixedCosts.items.length - MAX_FIXED;
@@ -557,7 +549,7 @@ async function renderDashboardPage(container) {
             </div>` : ''}
           </div>
           <div class="ds-card-foot">
-            <span class="ds-foot-label">Restbudget ${trendLabel}</span>
+            <span class="ds-foot-label">Restbudget</span>
             <span class="ds-foot-value ${forecast.restbudget < 0 ? 'ds-negative' : 'ds-positive'}">${formatAmount(forecast.restbudget)}</span>
           </div>
         </div>
@@ -1780,7 +1772,7 @@ async function renderInstallmentsPage(container) {
               <span class="inst-detail-value">${endLabel}</span>
             </div>
             <div class="inst-detail-item">
-              <span class="inst-detail-label">Abbuchung</span>
+              <span class="inst-detail-label">Tag</span>
               <span class="inst-detail-value">${dayLabel}</span>
             </div>
           </div>
@@ -1976,12 +1968,6 @@ async function renderDistributionsPage(container) {
             <span class="dist-item-amount amount-expense">–${formatAmount(i.amount)}</span>
           </div>`).join('');
 
-        const incomeRows = incomes.map(i => `
-          <div class="dist-item">
-            <span class="dist-item-name">${escHtml(i.account_name)}</span>
-            <span class="dist-item-amount amount-income">+${formatAmount(i.amount)}</span>
-          </div>`).join('');
-
         return `
           <div class="dist-card ${!isActive ? 'dist-card-inactive' : ''}">
             <button class="dist-edit-btn"
@@ -1991,16 +1977,8 @@ async function renderDistributionsPage(container) {
             <div class="dist-card-title">${escHtml(d.description || 'Umbuchung')}</div>
             <div class="dist-card-meta">${label} · nächste Ausführung: ${formatDate(d.next_due_date)}</div>
 
-            <div class="dist-flow">
-              <div class="dist-flow-col">
-                <div class="dist-flow-label">Ausgänge</div>
-                ${expenseRows || '<span class="dist-empty">–</span>'}
-              </div>
-              <div class="dist-flow-arrow">→</div>
-              <div class="dist-flow-col">
-                <div class="dist-flow-label">Eingang</div>
-                ${incomeRows || '<span class="dist-empty">–</span>'}
-              </div>
+            <div class="dist-expense-list">
+              ${expenseRows || '<span class="dist-empty">–</span>'}
             </div>
 
             <div class="dist-total">
@@ -2579,7 +2557,6 @@ async function renderSettingsPage(container) {
   const catRows = cats.length
     ? cats.map(c => `
         <div class="cat-row">
-          <span class="cat-row-icon">${c.icon || '💡'}</span>
           <span class="cat-row-dot" style="background:${c.color || '#4d9fff'}"></span>
           <span class="cat-row-name">${escHtml(c.name)}</span>
           <div class="cat-row-actions">

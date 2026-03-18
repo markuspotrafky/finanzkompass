@@ -265,7 +265,7 @@ body { display: flex; overflow: hidden; }
 
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
   margin-bottom: 28px;
 }
@@ -893,7 +893,7 @@ select option { background: var(--bg-panel); }
 .ds-card-foot {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
@@ -1334,18 +1334,33 @@ select option { background: var(--bg-panel); }
 .inst-prev-row        { display: block; }
 .inst-prev-row strong { color: var(--text); }
 
-/* Ratenkauf Detail-Grid */
+/* Ratenkauf Detail-Grid — 2 Spalten, kein Overflow */
 .inst-detail-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
   padding: 12px 0 4px;
   border-top: 1px solid var(--border);
 }
 
-.inst-detail-item { display: flex; flex-direction: column; gap: 2px; }
-.inst-detail-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
-.inst-detail-value { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inst-detail-item  { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.inst-detail-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inst-detail-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    UMBUCHUNGEN (Distributions)
@@ -1377,50 +1392,37 @@ select option { background: var(--bg-panel); }
 }
 .dist-card-meta  { font-size: 12px; color: var(--text-dim); margin-top: -4px; }
 
-.dist-flow {
-  display: flex;
-  align-items: stretch;
+/* Umbuchungs-Card: einfache Liste der Privatkonten-Ausgaben */
+.dist-expense-list {
   background: var(--bg);
   border-radius: var(--radius-sm);
-  overflow: hidden;
   border: 1px solid var(--border);
-}
-
-.dist-flow-col {
-  flex: 1;
-  padding: 12px 14px;
-}
-
-.dist-flow-col + .dist-flow-col { border-left: 1px solid var(--border); }
-
-.dist-flow-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-  font-weight: 600;
-}
-
-.dist-flow-arrow {
+  padding: 10px 14px;
   display: flex;
-  align-items: center;
-  padding: 0 10px;
-  color: var(--text-muted);
-  font-size: 14px;
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 4px;
 }
+
+/* Altes dist-flow — wird nicht mehr gerendert, Styles bleiben für etwaige Reste */
+.dist-flow { display: none; }
 
 .dist-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 3px 0;
+  gap: 8px;
   font-size: 13px;
+  min-width: 0;
 }
 
-.dist-item-name   { color: var(--text-dim); white-space: nowrap; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.dist-item-name {
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
 .dist-item-amount { font-family: var(--font-mono); font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
 .dist-empty       { font-size: 12px; color: var(--text-muted); }
 
