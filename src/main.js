@@ -376,12 +376,13 @@ async function promptPassword(dbPath) {
 }
 
 // Öffnet ein minimales BrowserWindow für die Passworteingabe.
+// Bei neuer DB (isNew=true): zwei Felder + Übereinstimmungsprüfung.
 // Gibt Promise<string|null> zurück.
 function showPasswordWindow(isNew, attempt, maxAttempts) {
   return new Promise(resolve => {
     const win = new BrowserWindow({
       width:           420,
-      height:          280,
+      height:          isNew ? 340 : 280,
       frame:           false,
       resizable:       false,
       center:          true,
@@ -397,7 +398,6 @@ function showPasswordWindow(isNew, attempt, maxAttempts) {
     const attemptsLeft = maxAttempts - attempt + 1;
     const isRetry      = attempt > 1;
 
-    // HTML inline — kein externes File nötig
     const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -407,15 +407,17 @@ function showPasswordWindow(isNew, attempt, maxAttempts) {
   body {
     background:#0B0F17; color:#e8eaf0; font-family:-apple-system,sans-serif;
     display:flex; flex-direction:column; align-items:center;
-    justify-content:center; height:100vh; padding:28px; gap:16px;
+    justify-content:center; height:100vh; padding:28px; gap:14px;
     user-select:none; -webkit-app-region:drag;
   }
   .logo { font-size:18px; font-weight:700; color:#1DB954; letter-spacing:-0.5px; }
   .logo span { color:#e8eaf0; }
-  h2 { font-size:14px; color:#9ba4b5; font-weight:400; text-align:center; }
+  h2 { font-size:13.5px; color:#9ba4b5; font-weight:400; text-align:center; line-height:1.5; }
   .error { color:#ff4d4f; font-size:12px; background:rgba(255,77,79,0.1);
            border:1px solid rgba(255,77,79,0.25); border-radius:8px;
            padding:7px 12px; width:100%; text-align:center; }
+  .field { display:flex; flex-direction:column; gap:5px; width:100%; }
+  label { font-size:11px; color:#5a6478; text-transform:uppercase; letter-spacing:0.5px; }
   input {
     width:100%; padding:10px 14px; background:#141824;
     border:1px solid #2a3040; border-radius:10px;
@@ -423,8 +425,10 @@ function showPasswordWindow(isNew, attempt, maxAttempts) {
     -webkit-app-region:no-drag;
   }
   input:focus { border-color:#1DB954; box-shadow:0 0 0 3px rgba(29,185,84,0.15); }
-  .hint { font-size:11px; color:#5a6478; text-align:center; }
-  .buttons { display:flex; gap:10px; width:100%; margin-top:4px; }
+  input.invalid { border-color:#ff4d4f; box-shadow:0 0 0 3px rgba(255,77,79,0.15); }
+  .hint { font-size:11px; color:#5a6478; text-align:center; line-height:1.5; }
+  .hint strong { color:#ffc145; }
+  .buttons { display:flex; gap:10px; width:100%; margin-top:2px; }
   button {
     flex:1; padding:10px; border:none; border-radius:10px;
     font-size:13px; font-weight:600; cursor:pointer;
@@ -434,32 +438,73 @@ function showPasswordWindow(isNew, attempt, maxAttempts) {
   .btn-cancel:hover { background:#252f45; }
   .btn-ok { background:#1DB954; color:#0B0F17; }
   .btn-ok:hover { background:#17a349; }
+  .btn-ok:disabled { background:#1a4a2a; color:#2d7a4a; cursor:default; }
 </style>
 </head>
 <body>
 <div class="logo">Finanz<span>Kompass</span></div>
-<h2>${isNew ? 'Lege ein Passwort für deine Datenbank fest.' : 'Bitte gib dein Datenbankpasswort ein.'}</h2>
+
+${isNew ? `
+<h2>Erstmaliger Start – lege ein Passwort fest.<br>Es schützt deine Datenbank.</h2>
+<div class="field">
+  <label>Passwort</label>
+  <input type="password" id="pw" placeholder="Mindestens 4 Zeichen" autofocus />
+</div>
+<div class="field">
+  <label>Passwort bestätigen</label>
+  <input type="password" id="pw2" placeholder="Passwort wiederholen" />
+</div>
+<div class="hint"><strong>Wichtig:</strong> Dieses Passwort kann nicht wiederhergestellt werden.<br>Bitte notiere es sicher.</div>
+` : `
+<h2>Bitte gib dein Datenbankpasswort ein.</h2>
 ${isRetry ? `<div class="error">Falsches Passwort – noch ${attemptsLeft} Versuch${attemptsLeft !== 1 ? 'e' : ''}</div>` : ''}
-<input type="password" id="pw" placeholder="${isNew ? 'Neues Passwort' : 'Passwort'}" autofocus />
-${isNew ? '<div class="hint">Dieses Passwort schützt deine Daten. Bitte gut merken.</div>' : ''}
+<div class="field">
+  <input type="password" id="pw" placeholder="Passwort" autofocus />
+</div>
+`}
+
 <div class="buttons">
   <button class="btn-cancel" id="cancel">Abbrechen</button>
-  <button class="btn-ok"     id="ok">${isNew ? 'Festlegen' : 'Entsperren'}</button>
+  <button class="btn-ok" id="ok" ${isNew ? 'disabled' : ''}>${isNew ? 'Passwort festlegen' : 'Entsperren'}</button>
 </div>
+
 <script>
   const { ipcRenderer } = require('electron');
-  const input = document.getElementById('pw');
-  document.getElementById('ok').onclick = () => {
-    const v = input.value;
-    if (!v) { input.focus(); return; }
+  const pw  = document.getElementById('pw');
+  const pw2 = document.getElementById('pw2');
+  const ok  = document.getElementById('ok');
+  const isNew = ${isNew};
+
+  function validate() {
+    if (!isNew) return;
+    const v1 = pw.value;
+    const v2 = pw2 ? pw2.value : '';
+    const match = v1.length >= 4 && v1 === v2;
+    ok.disabled = !match;
+    if (pw2) {
+      pw2.classList.toggle('invalid', v2.length > 0 && v1 !== v2);
+    }
+  }
+
+  pw.addEventListener('input', validate);
+  if (pw2) pw2.addEventListener('input', validate);
+
+  ok.addEventListener('click', () => {
+    const v = pw.value;
+    if (!v || (isNew && v !== (pw2?.value ?? ''))) return;
     ipcRenderer.send('pw-result', v);
-  };
-  document.getElementById('cancel').onclick = () => ipcRenderer.send('pw-result', null);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') document.getElementById('ok').click();
-    if (e.key === 'Escape') document.getElementById('cancel').click();
   });
-  setTimeout(() => input.focus(), 80);
+
+  document.getElementById('cancel').onclick = () => ipcRenderer.send('pw-result', null);
+
+  [pw, pw2].filter(Boolean).forEach(el => {
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') ok.click();
+      if (e.key === 'Escape') document.getElementById('cancel').click();
+    });
+  });
+
+  setTimeout(() => pw.focus(), 80);
 </script>
 </body>
 </html>`;
@@ -467,7 +512,6 @@ ${isNew ? '<div class="hint">Dieses Passwort schützt deine Daten. Bitte gut mer
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
     win.once('ready-to-show', () => win.show());
 
-    // Einmaliger IPC-Listener — wird nach Antwort sofort entfernt
     const { ipcMain } = require('electron');
     const handler = (_, value) => {
       if (!win.isDestroyed()) win.close();
