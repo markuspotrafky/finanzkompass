@@ -1893,3 +1893,42 @@ select option { background: var(--bg-panel); }
   color: var(--text);
   background: rgba(255,255,255,0.06);
 }
+
+/* ── Tabellen-Sortierung ─────────────────────────────────────────────────── */
+
+/* Sortierbare Spalten: Hover-Feedback */
+table thead th[onclick] {
+  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+table thead th[onclick]:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.04);
+}
+
+/* Aktive Spalte: Akzentfarbe */
+table thead th.th-sort-active {
+  color: var(--accent);
+}
+
+/* Sortier-Pfeil */
+.sort-arrow {
+  display: inline-block;
+  font-size: 11px;
+  margin-left: 4px;
+  opacity: 0.9;
+  vertical-align: middle;
+  transition: opacity 0.15s;
+}
+
+.sort-arrow-asc  { color: var(--accent); }
+.sort-arrow-desc { color: var(--accent); }
+
+/* Nicht-aktive <th> bekommen einen schwachen Hover-Pfeil */
+table thead th[onclick]:not(.th-sort-active):hover::after {
+  content: ' ↕';
+  font-size: 10px;
+  opacity: 0.3;
+  color: var(--text-dim);
+}

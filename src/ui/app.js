@@ -193,6 +193,99 @@ function isValidAmount(value, { allowZero = false, allowNegative = false } = {})
   return true;
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// TABELLEN-SORTIERUNG
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Architektur:
+//   tableSort     — zentraler State pro Tabellen-ID { col, dir }
+//   sortData()    — sortiert ein Array nach col+dir, kein DOM
+//   sortTh()      — baut <th>-HTML mit data-sort Attribut + Pfeil
+//   applySort()   — State-Toggle + Re-Render (wird von onclick aufgerufen)
+//
+// Verwendung in Render-Funktionen:
+//   1. Daten mit sortData(data, tableId, col) vor dem Row-Mapping sortieren
+//   2. <th> durch sortTh(tableId, 'col', 'Text', 'type') ersetzen
+//   3. applySort(tableId, renderFn) als onclick übergeben
+//
+// Spalten-Typen:
+//   'text'   → localeCompare('de') — alphabetisch, Umlaute korrekt
+//   'number' → numerisch
+//   'date'   → ISO-Datum-String chronologisch (lexikographisch vergleichbar)
+// ══════════════════════════════════════════════════════════════════════════
+
+const tableSort = {}; // { [tableId]: { col: string, dir: 1|-1 } }
+
+// Sortiert ein Array in-place. Gibt dasselbe Array zurück.
+// col        = Schlüssel im Objekt (z.B. 'date', 'amount')
+// type       = 'text' | 'number' | 'date'
+// Leere/null Werte landen immer am Ende, unabhängig von der Richtung.
+// Sortiert ein Array in-place. Gibt dasselbe Array zurück.
+// Liest col und type aus tableSort[tableId] — kein Aufruf nötig wenn kein State.
+// Leere/null Werte landen immer am Ende, unabhängig von der Richtung.
+function sortData(arr, tableId) {
+  const state = tableSort[tableId];
+  if (!state) return arr; // Kein Sort-State → Originalreihenfolge
+
+  const { col, type, dir } = state;
+
+  return arr.slice().sort((a, b) => {
+    let va = a[col];
+    let vb = b[col];
+
+    // Leere Werte immer ans Ende
+    const emptyA = (va === null || va === undefined || va === '');
+    const emptyB = (vb === null || vb === undefined || vb === '');
+    if (emptyA && emptyB)  return 0;
+    if (emptyA)            return 1;
+    if (emptyB)            return -1;
+
+    switch (type) {
+      case 'number':
+        return (Number(va) - Number(vb)) * dir;
+
+      case 'date':
+        // ISO-Strings ('2026-03-01') sind lexikographisch direkt vergleichbar
+        return va < vb ? -dir : va > vb ? dir : 0;
+
+      case 'text':
+      default:
+        return String(va).localeCompare(String(vb), 'de', { sensitivity: 'base' }) * dir;
+    }
+  });
+}
+
+// Gibt HTML für einen sortierbaren <th> zurück.
+// tableId    = eindeutige ID der Tabelle (z.B. 'tx-booked')
+// col        = Daten-Schlüssel der Spalte
+// label      = Anzeigetext
+// type       = 'text' | 'number' | 'date'
+// renderCall = JS-Ausdruck als String für onclick (z.B. 'renderTransactionsPage(...)')
+function sortTh(tableId, col, label, type, renderCall) {
+  const state   = tableSort[tableId];
+  const active  = state && state.col === col;
+  const dir     = active ? state.dir : 0;
+  const arrow   = active ? (dir === 1 ? ' <span class="sort-arrow sort-arrow-asc">↑</span>'
+                                       : ' <span class="sort-arrow sort-arrow-desc">↓</span>') : '';
+  const cls     = active ? ' class="th-sort-active"' : '';
+  const onclick = `applySort('${tableId}','${col}','${type}',()=>{${renderCall}})`;
+  return `<th${cls} onclick="${onclick}" style="cursor:pointer;user-select:none">${label}${arrow}</th>`;
+}
+
+// Toggle-Funktion: wird bei Klick auf <th> aufgerufen.
+// Schaltet col um oder dreht Richtung um, dann ruft renderFn() auf.
+function applySort(tableId, col, type, renderFn) {
+  const state = tableSort[tableId];
+  if (!state || state.col !== col) {
+    // Neue Spalte: aufsteigend starten
+    tableSort[tableId] = { col, type, dir: 1 };
+  } else {
+    // Gleiche Spalte: Richtung umkehren
+    tableSort[tableId] = { col, type, dir: state.dir * -1 };
+  }
+  renderFn();
+}
+
 // ── Notification ──────────────────────────────────────────────────────────
 
 function showNotification(msg, type = 'success') {
@@ -920,8 +1013,13 @@ async function renderTransactionsPage(container, tab) {
     return true;
   });
 
-  const bookedRows = filtered.length
-    ? filtered.map(t => {
+  // Daten sortieren (nach aktuellem tableSort-State für 'tx-booked')
+  const sortedFiltered = sortData(filtered, 'tx-booked');
+
+  const reRenderBooked = `renderTransactionsPage(document.getElementById('main-content'),'booked')`;
+
+  const bookedRows = sortedFiltered.length
+    ? sortedFiltered.map(t => {
         const isAdj     = t.type === 'adjustment';
         const adjClass  = isAdj ? ' tx-adjustment' : '';
         const typeLabel = isAdj
@@ -998,7 +1096,11 @@ async function renderTransactionsPage(container, tab) {
       </tr>`;
   }).join('');
 
-  const singleRows = filteredScheduled.map(s => {
+  // Geplante Transaktionen sortieren
+  const reRenderSched = `renderTransactionsPage(document.getElementById('main-content'),'scheduled')`;
+  const sortedScheduled = sortData(filteredScheduled, 'tx-scheduled');
+
+  const singleRows = sortedScheduled.map(s => {
     const intLabel    = s.interval_months
       ? (intervalLabel[s.interval_months] ?? `Alle ${s.interval_months} Monate`)
       : 'Einmalig';
@@ -1074,8 +1176,13 @@ async function renderTransactionsPage(container, tab) {
         <table>
           <thead>
             <tr>
-              <th>Datum</th><th>Konto</th><th>Kategorie</th><th>Beschreibung</th>
-              <th>Typ</th><th>Betrag</th><th></th>
+              ${sortTh('tx-booked','date',       'Datum',       'date',   reRenderBooked)}
+              ${sortTh('tx-booked','account_name','Konto',       'text',   reRenderBooked)}
+              ${sortTh('tx-booked','category_name','Kategorie',  'text',   reRenderBooked)}
+              ${sortTh('tx-booked','description', 'Beschreibung','text',   reRenderBooked)}
+              ${sortTh('tx-booked','type',        'Typ',         'text',   reRenderBooked)}
+              ${sortTh('tx-booked','amount',      'Betrag',      'number', reRenderBooked)}
+              <th></th>
             </tr>
           </thead>
           <tbody>${bookedRows}</tbody>
@@ -1089,8 +1196,15 @@ async function renderTransactionsPage(container, tab) {
         <table>
           <thead>
             <tr>
-              <th>Fälligkeit</th><th>Konto</th><th>Kategorie</th><th>Beschreibung</th>
-              <th>Typ</th><th>Betrag</th><th>Intervall</th><th>Status</th><th></th>
+              ${sortTh('tx-scheduled','next_due_date','Fälligkeit',  'date',   reRenderSched)}
+              ${sortTh('tx-scheduled','account_name', 'Konto',       'text',   reRenderSched)}
+              ${sortTh('tx-scheduled','category_name','Kategorie',   'text',   reRenderSched)}
+              ${sortTh('tx-scheduled','description',  'Beschreibung','text',   reRenderSched)}
+              ${sortTh('tx-scheduled','type',         'Typ',         'text',   reRenderSched)}
+              ${sortTh('tx-scheduled','amount',       'Betrag',      'number', reRenderSched)}
+              ${sortTh('tx-scheduled','interval_months','Intervall', 'number', reRenderSched)}
+              ${sortTh('tx-scheduled','is_active',    'Status',      'number', reRenderSched)}
+              <th></th>
             </tr>
           </thead>
           <tbody>${scheduledRows}</tbody>
@@ -1333,8 +1447,11 @@ async function renderFixcostsPage(container) {
     `<option value="${a.id}" ${filterAccount === String(a.id) ? 'selected' : ''}>${escHtml(a.name)}</option>`
   ).join('');
 
-  const rows = filtered.length
-    ? filtered.map(s => {
+  const reRenderFc = `renderFixcostsPage(document.getElementById('main-content'))`;
+  const sortedFc = sortData(filtered, 'fc');
+
+  const rows = sortedFc.length
+    ? sortedFc.map(s => {
         const label = intervalLabel[s.interval_months] ?? `Alle ${s.interval_months} Monate`;
         const statusBadge = s.is_active
           ? `<span class="badge badge-income">Aktiv</span>`
@@ -1404,9 +1521,15 @@ async function renderFixcostsPage(container) {
       <table>
         <thead>
           <tr>
-            <th>Beschreibung</th><th>Konto</th><th>Kategorie</th>
-            <th>Typ</th><th>Betrag</th><th>Intervall</th>
-            <th>Nächste Fälligkeit</th><th>Status</th><th></th>
+            ${sortTh('fc','description',   'Beschreibung',       'text',   reRenderFc)}
+            ${sortTh('fc','account_name',  'Konto',              'text',   reRenderFc)}
+            ${sortTh('fc','category_name', 'Kategorie',          'text',   reRenderFc)}
+            ${sortTh('fc','type',          'Typ',                'text',   reRenderFc)}
+            ${sortTh('fc','amount',        'Betrag',             'number', reRenderFc)}
+            ${sortTh('fc','interval_months','Intervall',         'number', reRenderFc)}
+            ${sortTh('fc','next_due_date', 'Nächste Fälligkeit', 'date',   reRenderFc)}
+            ${sortTh('fc','is_active',     'Status',             'number', reRenderFc)}
+            <th></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
