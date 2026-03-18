@@ -108,6 +108,30 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('de-DE');
 }
 
+// ── Verfügbarer Betrag (inkl. Dispokredit) ────────────────────────────────
+// Reine Berechnungsfunktion — keine Seiteneffekte, keine DB-Änderungen.
+//   balance < 0  → verfügbar = balance + overdraft  (Dispo aufbrauchen)
+//   balance >= 0 → verfügbar = balance              (Dispo irrelevant)
+//   Kein Dispo   → verfügbar = balance              (normales Verhalten)
+//
+// Beispiele:
+//   (-719.21, 800) → 80.79      (im Dispo-Bereich)
+//   (-900,   800)  → -100       (Dispo überzogen)
+//   (100,    800)  → 100        (positiv, Dispo irrelevant)
+//   (100,    0)    → 100        (kein Dispo)
+function getAvailableBalance(balance, overdraft) {
+  const dispo = overdraft || 0;
+  if (balance < 0) {
+    return parseFloat((balance + dispo).toFixed(2));
+  }
+  return parseFloat(balance.toFixed(2));
+}
+
+// Gibt zurück ob der Dispo aktuell genutzt wird (balance negativ + Dispo > 0)
+function isUsingOverdraft(balance, overdraft) {
+  return balance < 0 && (overdraft || 0) > 0;
+}
+
 function getTodayISO() {
   // Lokales Datum (nicht UTC) — verhindert Fehler um Mitternacht für DE-Nutzer (GMT+1/+2)
   const now = new Date();
@@ -459,13 +483,19 @@ async function renderDashboardPage(container) {
 
   const heroValueClass = budget.restbudget >= 0 ? 'ds-hero-value ds-positive' : 'ds-hero-value ds-negative';
 
-  // Kontostände mit Farb-Punkt (nutzt a.color aus DB)
+  // Kontostände mit Farb-Punkt und ggf. Verfügbar-Betrag
   const accountRows = accounts.length
     ? accounts.map(a => {
-        const dot = `<span class="ds-row-dot" style="background:${a.color || '#4d9fff'}"></span>`;
+        const dot       = `<span class="ds-row-dot" style="background:${a.color || '#4d9fff'}"></span>`;
+        const available = getAvailableBalance(a.balance, a.overdraft_limit);
+        const showAvail = a.overdraft_limit > 0 && a.balance < 0;
+        const availHtml = showAvail
+          ? `<span class="ds-avail-badge ${available >= 0 ? 'ds-avail-pos' : 'ds-avail-neg'}"
+                  title="Verfügbar inkl. Dispo (${formatAmount(a.overdraft_limit)})">${formatAmount(available)}</span>`
+          : '';
         return `
           <div class="ds-row">
-            <span class="ds-row-label">${dot}${escHtml(a.name)}</span>
+            <span class="ds-row-label">${dot}${escHtml(a.name)}${availHtml}</span>
             <span class="ds-row-value ${a.balance < 0 ? 'ds-negative' : ''}">${formatAmount(a.balance)}</span>
           </div>`;
       }).join('')
@@ -792,15 +822,31 @@ async function renderAccountsPage(container) {
         const typeBadge = isJoint
           ? `<span class="acc-type-badge acc-type-joint">Gemeinschaft</span>`
           : `<span class="acc-type-badge acc-type-private">Privat</span>`;
+        const available     = getAvailableBalance(a.balance, a.overdraft_limit);
+        const usingOverdraft = isUsingOverdraft(a.balance, a.overdraft_limit);
+        const availClass    = available >= 0 ? 'acc-available-pos' : 'acc-available-neg';
         return `
           <div class="account-card ${isJoint ? 'account-card-joint' : ''}"
                style="border-top: 3px solid ${color}">
             <button class="account-delete-btn" onclick="deleteAccount(${a.id})" title="Konto löschen">✕</button>
             <div class="account-card-name" style="color:${color}">${escHtml(a.name)}</div>
             ${typeBadge}
+
             <div class="account-card-balance ${a.balance < 0 ? 'negative' : 'positive'}">
               ${formatAmount(a.balance)}
             </div>
+
+            ${a.overdraft_limit > 0 ? `
+            <div class="account-card-available">
+              <span class="acc-available-label" title="Kontostand + Dispokredit (${formatAmount(a.overdraft_limit)})">
+                Verfügbar
+              </span>
+              <span class="acc-available-value ${availClass}">
+                ${formatAmount(available)}
+              </span>
+              ${usingOverdraft ? `<span class="acc-dispo-hint">Dispo genutzt</span>` : ''}
+            </div>` : ''}
+
             <div class="account-card-meta">
               Startwert: ${formatAmount(a.initial_balance)} &nbsp;·&nbsp;
               Dispo: ${formatAmount(a.overdraft_limit)}
