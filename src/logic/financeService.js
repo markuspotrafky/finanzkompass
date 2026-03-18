@@ -130,6 +130,15 @@ function getBudgetCurrentMonth() {
   const privateIds      = new Set(privateAccounts.map(a => a.id));
   const totalBalance    = privateAccounts.reduce((sum, a) => sum + (a.balance ?? 0), 0);
 
+  // Gesamter verfügbarer Stand inkl. Dispo (für Hero-Anzeige und Restbudget-Basis)
+  const totalAvailableBalance = parseFloat(
+    privateAccounts.reduce((sum, a) => {
+      const bal   = a.balance ?? 0;
+      const dispo = a.overdraft_limit ?? 0;
+      return sum + (bal < 0 ? bal + dispo : bal);
+    }, 0).toFixed(2)
+  );
+
   const scheduled    = db.getAllScheduled();
   const transactions = db.getAllTransactions();
 
@@ -176,15 +185,21 @@ function getBudgetCurrentMonth() {
     const bookedIn   = bookedThisMonth.filter(t => t.account_id === a.id && t.type === 'income') .reduce((sum, t) => sum + t.amount, 0);
     const bookedOut  = bookedThisMonth.filter(t => t.account_id === a.id && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
 
-    // Restbudget = Kontostand + geplante Einnahmen - geplante Ausgaben - ausstehende Raten
-    const restbudget = parseFloat((a.balance + plannedIn - plannedOut - instStillDue).toFixed(2));
+    // Verfügbarer Kontostand inkl. Dispo als Basis für Restbudget
+    const bal      = a.balance ?? 0;
+    const dispo    = a.overdraft_limit ?? 0;
+    const availBal = bal < 0 ? bal + dispo : bal;
+
+    // Restbudget = verfügbarer Stand + geplante Einnahmen - geplante Ausgaben - ausstehende Raten
+    const restbudget = parseFloat((availBal + plannedIn - plannedOut - instStillDue).toFixed(2));
 
     return {
       id:           a.id,
       name:         a.name,
       color:        a.color || '#4d9fff',
-      balance:      parseFloat((a.balance ?? 0).toFixed(2)),
-      overdraft:    a.overdraft_limit ?? 0,
+      balance:      parseFloat(bal.toFixed(2)),
+      overdraft:    dispo,
+      availBal:     parseFloat(availBal.toFixed(2)),
       plannedIn:    parseFloat(plannedIn.toFixed(2)),
       plannedOut:   parseFloat(plannedOut.toFixed(2)),
       bookedIn:     parseFloat(bookedIn.toFixed(2)),
@@ -198,11 +213,12 @@ function getBudgetCurrentMonth() {
 
   return {
     totalBalance,
+    totalAvailableBalance,
     plannedIncome:  parseFloat(plannedIncome.toFixed(2)),
     plannedExpense: parseFloat(plannedExpense.toFixed(2)),
     bookedIncome:   parseFloat(bookedIncome.toFixed(2)),
     bookedExpense:  parseFloat(bookedExpense.toFixed(2)),
-    restbudget:     totalBalance + plannedIncome - plannedExpense,
+    restbudget:     parseFloat((totalAvailableBalance + plannedIncome - plannedExpense).toFixed(2)),
     totalRestbudget,
     perAccount,
     month: `${String(month).padStart(2, '0')}/${year}`

@@ -485,19 +485,18 @@ async function renderDashboardPage(container) {
 
   // ── Übersichtstabelle: Kontostand + Restbudget pro Konto + Gesamt ─────────
   const tableRows = budget.perAccount.map(a => {
-    const available  = getAvailableBalance(a.balance, a.overdraft);
-    const showAvail  = a.overdraft > 0 && a.balance < 0;
     const restClass  = a.restbudget >= 0 ? 'ds-positive' : 'ds-negative';
-    const balClass   = a.balance    >= 0 ? '' : 'ds-negative';
+    const balClass   = a.availBal   >= 0 ? '' : 'ds-negative';
+    const showAvail  = a.overdraft > 0 && a.balance < 0;
     return `
       <tr class="ov-body-row">
         <td class="ov-name">
           <span class="ov-dot" style="background:${a.color}"></span>
           ${escHtml(a.name)}
         </td>
-        <td class="ov-num ${balClass}">${formatAmount(a.balance)}</td>
-        <td class="ov-num ${a.balance < 0 && a.overdraft > 0 ? (available >= 0 ? 'ds-positive' : 'ds-negative') : 'ov-dim'}">
-          ${showAvail ? formatAmount(available) : '–'}
+        <td class="ov-num ${balClass}">${formatAmount(a.availBal)}</td>
+        <td class="ov-num ${showAvail ? 'ov-dim' : 'ov-dim'}">
+          ${showAvail ? `<span style="font-size:11px;color:var(--text-muted)">inkl. ${formatAmount(a.overdraft)} Dispo</span>` : '–'}
         </td>
         <td class="ov-num ds-positive">${a.bookedIn > 0 ? '+' + formatAmount(a.bookedIn) : '–'}</td>
         <td class="ov-num ds-negative">${a.bookedOut > 0 ? '–' + formatAmount(a.bookedOut) : '–'}</td>
@@ -507,14 +506,13 @@ async function renderDashboardPage(container) {
       </tr>`;
   }).join('');
 
-  const totalAvail      = getAvailableBalance(budget.totalBalance, budget.perAccount.reduce((s,a) => s + a.overdraft, 0));
   const totalBookedIn   = budget.perAccount.reduce((s,a) => s + a.bookedIn,   0);
   const totalBookedOut  = budget.perAccount.reduce((s,a) => s + a.bookedOut,  0);
   const totalPlannedIn  = budget.perAccount.reduce((s,a) => s + a.plannedIn,  0);
   const totalPlannedOut = budget.perAccount.reduce((s,a) => s + (a.plannedOut + a.instStillDue), 0);
   const totalHasOverdraft = budget.perAccount.some(a => a.overdraft > 0 && a.balance < 0);
   const totalRestClass  = budget.totalRestbudget >= 0 ? 'ds-positive' : 'ds-negative';
-  const totalBalClass   = budget.totalBalance    >= 0 ? '' : 'ds-negative';
+  const totalBalClass   = budget.totalAvailableBalance >= 0 ? '' : 'ds-negative';
 
   // Ratenkauf-Vorschau für Dashboard (max. 3 aktive)
   const instRows = installmentSummary.preview.length
@@ -546,7 +544,7 @@ async function renderDashboardPage(container) {
           <div class="ds-hero-stats">
             <div class="ds-hero-stat">
               <span class="ds-hero-stat-label">Kontostand</span>
-              <span class="ds-hero-stat-value ${budget.totalBalance < 0 ? 'ds-negative' : ''}">${formatAmount(budget.totalBalance)}</span>
+              <span class="ds-hero-stat-value ${budget.totalAvailableBalance < 0 ? 'ds-negative' : ''}">${formatAmount(budget.totalAvailableBalance)}</span>
             </div>
             <div class="ds-hero-sep"></div>
             <div class="ds-hero-stat-group">
@@ -601,9 +599,9 @@ async function renderDashboardPage(container) {
               ${tableRows}
               <tr class="ov-total-row">
                 <td class="ov-name ov-total-label">Gesamt</td>
-                <td class="ov-num ${totalBalClass}">${formatAmount(budget.totalBalance)}</td>
-                <td class="ov-num ${totalHasOverdraft ? (totalAvail >= 0 ? 'ds-positive' : 'ds-negative') : 'ov-dim'}">
-                  ${totalHasOverdraft ? formatAmount(totalAvail) : '–'}
+                <td class="ov-num ${totalBalClass}">${formatAmount(budget.totalAvailableBalance)}</td>
+                <td class="ov-num ov-dim">
+                  ${totalHasOverdraft ? `<span style="font-size:11px;color:var(--text-muted)">inkl. Dispo</span>` : '–'}
                 </td>
                 <td class="ov-num ds-positive">${totalBookedIn  > 0 ? '+' + formatAmount(totalBookedIn)  : '–'}</td>
                 <td class="ov-num ds-negative">${totalBookedOut > 0 ? '–' + formatAmount(totalBookedOut) : '–'}</td>
