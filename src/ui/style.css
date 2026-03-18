@@ -377,7 +377,7 @@ body { display: flex; overflow: hidden; }
   box-shadow: var(--shadow-card);
 }
 
-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; table-layout: auto; }
 
 thead th {
   background: var(--bg-panel);
@@ -389,6 +389,8 @@ thead th {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--border);
+  /* Verhindert dass Spalten über Container hinauswachsen */
+  overflow: hidden;
 }
 
 tbody tr {
@@ -399,7 +401,20 @@ tbody tr {
 tbody tr:last-child { border-bottom: none; }
 tbody tr:hover      { background: var(--bg-hover); }
 
-tbody td { padding: 12px 16px; color: var(--text); }
+tbody td {
+  padding: 12px 16px;
+  color: var(--text);
+  /* Text-Überlauf in Tabellenzellen verhindern */
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Betrag-Zellen niemals abschneiden */
+tbody td.amount-income,
+tbody td.amount-expense,
+tbody td:last-child { max-width: none; white-space: nowrap; }
 
 .amount-income  { color: var(--positive);  font-family: var(--font-mono); font-weight: 700; letter-spacing: -0.3px; }
 .amount-expense { color: var(--negative);  font-family: var(--font-mono); font-weight: 700; letter-spacing: -0.3px; }
@@ -911,12 +926,23 @@ select option { background: var(--bg-panel); }
 
 .ds-row:last-child { border-bottom: none; }
 
+/* Untergeordnete Zeile (z.B. "davon Ratenkäufe" in Prognose) */
+.ds-row-sub {
+  padding: 3px 0 6px 10px;
+  border-bottom: none;
+  opacity: 0.75;
+}
+
 .ds-row-label {
   font-size: 13px;
   color: var(--text-dim);
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;          /* erlaubt Truncation */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Farbiger Punkt vor Kontoname */
@@ -933,6 +959,8 @@ select option { background: var(--bg-panel); }
   color: var(--text);
   font-family: var(--font-mono);
   letter-spacing: -0.3px;
+  flex-shrink: 0;        /* Betrag nie abschneiden */
+  margin-left: 8px;
 }
 
 .ds-row-more {
@@ -1212,7 +1240,14 @@ select option { background: var(--bg-panel); }
 .progress-card:hover { background: var(--bg-hover); transform: translateY(-1px); }
 .progress-card-done  { border-color: rgba(29,185,84,0.3) !important; opacity: 0.8; }
 
-.progress-card-name  { font-size: 14px; font-weight: 600; padding-right: 28px; }
+.progress-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  padding-right: 28px; /* Platz für Delete-Button */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .progress-amounts {
   display: flex;
@@ -1220,6 +1255,8 @@ select option { background: var(--bg-panel); }
   gap: 6px;
   font-size: 20px;
   font-weight: 700;
+  overflow: hidden;      /* verhindert Überlauf bei langen Zahlen */
+  min-width: 0;
 }
 
 .progress-of {
@@ -1330,7 +1367,14 @@ select option { background: var(--bg-panel); }
 .dist-card:hover    { background: var(--bg-hover); transform: translateY(-1px); }
 .dist-card-inactive { opacity: 0.5; }
 
-.dist-card-title { font-size: 15px; font-weight: 600; padding-right: 64px; }
+.dist-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  padding-right: 64px; /* Platz für Edit + Delete Button */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dist-card-meta  { font-size: 12px; color: var(--text-dim); margin-top: -4px; }
 
 .dist-flow {
@@ -1376,8 +1420,8 @@ select option { background: var(--bg-panel); }
   font-size: 13px;
 }
 
-.dist-item-name   { color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
-.dist-item-amount { font-family: var(--font-mono); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.dist-item-name   { color: var(--text-dim); white-space: nowrap; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.dist-item-amount { font-family: var(--font-mono); font-size: 13px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
 .dist-empty       { font-size: 12px; color: var(--text-muted); }
 
 .dist-total {

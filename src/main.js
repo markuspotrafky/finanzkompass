@@ -344,10 +344,16 @@ app.on('window-all-closed', () => {
 });
 
 app.on('browser-window-focus', () => {
+  // Nur Electron-Webview-Fokus setzen wenn tatsächlich nötig.
+  // Kein blindes webContents.focus() — der Renderer erkennt den
+  // OS-Fensterwechsel selbst via window blur/focus Events.
   if (mainWindow && !mainWindow.isDestroyed()) {
+    // Kurzes Delay damit OS-Fokus-Übergang abgeschlossen ist
     setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.focus();
-    }, 50);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.focus();
+      }
+    }, 100);
   }
 });
 

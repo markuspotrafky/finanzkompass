@@ -54,7 +54,15 @@ function getBudgetCurrentMonth() {
   };
 }
 
-// ── C) Prognose nächster Monat – NUR Privatkonten, OHNE Verteilungseinträge ─
+// ── C) Prognose nächster Monat – NUR Privatkonten ────────────────────────
+// Enthält:
+//   1. Wiederkehrende geplante Transaktionen ohne Gruppenkennung (bisheriges Verhalten)
+//   2. Umbuchungsausgaben für Privatkonten (group_id gesetzt, type='expense')
+//   3. Ratenkauf-Raten für Privatkonten (monatliche Rate × noch offene Monate)
+//
+// Hinweis: Es wird next_due_date des jeweils nächsten Fälligkeitstermins
+// geprüft. Einträge ohne festes Datum im Zielmonat (z.B. interval > 1)
+// werden anhand der Simulations-Fälligkeit einbezogen.
 
 function getForecastNextMonth() {
   const now       = new Date();
@@ -64,29 +72,61 @@ function getForecastNextMonth() {
 
   const { first, last } = monthRange(year, nextMonth);
 
-  const privateIds = new Set(
-    db.getAllAccounts()
-      .filter(a => (a.account_type || 'private') === 'private')
-      .map(a => a.id)
-  );
+  const privateAccounts = db.getAllAccounts().filter(a => (a.account_type || 'private') === 'private');
+  const privateIds      = new Set(privateAccounts.map(a => a.id));
 
-  const scheduled    = db.getAllScheduled();
-  const dueNextMonth = scheduled.filter(s =>
+  const scheduled = db.getAllScheduled();
+
+  // ── 1) Normale geplante Transaktionen von Privatkonten (ohne Gruppe) ───
+  const singleDue = scheduled.filter(s =>
     s.is_active === 1 &&
-    s.group_id === null &&              // Keine Verteilungseinträge
-    privateIds.has(s.account_id) &&    // Nur Privatkonten
+    s.group_id === null &&
+    privateIds.has(s.account_id) &&
     s.next_due_date >= first &&
     s.next_due_date <= last
   );
 
-  const income  = dueNextMonth.filter(s => s.type === 'income').reduce((sum, s) => sum + s.amount, 0);
-  const expense = dueNextMonth.filter(s => s.type === 'expense').reduce((sum, s) => sum + s.amount, 0);
+  // ── 2) Umbuchungsausgaben von Privatkonten ─────────────────────────────
+  // Umbuchungen haben group_id gesetzt. Wir nehmen die Ausgaben-Seite
+  // (type='expense') für Privatkonten die im Zielmonat fällig sind.
+  const distExpenses = scheduled.filter(s =>
+    s.is_active === 1 &&
+    s.group_id !== null &&
+    s.type === 'expense' &&
+    privateIds.has(s.account_id) &&
+    s.next_due_date >= first &&
+    s.next_due_date <= last
+  );
+
+  // ── 3) Ratenkauf-Raten ─────────────────────────────────────────────────
+  // Ratenkäufe haben keinen scheduled_transaction-Eintrag — ihre monatliche
+  // Rate ist fix. Wenn ein Ratenkauf noch nicht abgeschlossen ist und einem
+  // Privatkonto zugeordnet ist, fällt im nächsten Monat eine Rate an.
+  const installments = db.getAllInstallments().filter(inst =>
+    inst.paid_months < inst.total_months &&
+    (!inst.account_id || privateIds.has(inst.account_id))
+  );
+  const installmentExpense = installments.reduce((sum, inst) => sum + inst.monthly_rate, 0);
+
+  // ── Zusammenführen ─────────────────────────────────────────────────────
+  const allScheduledExpenses = [...singleDue, ...distExpenses];
+
+  const income  = singleDue
+    .filter(s => s.type === 'income')
+    .reduce((sum, s) => sum + s.amount, 0);
+
+  const expense = allScheduledExpenses
+    .filter(s => s.type === 'expense')
+    .reduce((sum, s) => sum + s.amount, 0)
+    + installmentExpense;
 
   return {
-    income,
-    expense,
-    restbudget: income - expense,
-    month: `${String(nextMonth).padStart(2, '0')}/${year}`
+    income:              parseFloat(income.toFixed(2)),
+    expense:             parseFloat(expense.toFixed(2)),
+    expenseScheduled:    parseFloat(allScheduledExpenses.filter(s => s.type === 'expense').reduce((s, x) => s + x.amount, 0).toFixed(2)),
+    expenseInstallments: parseFloat(installmentExpense.toFixed(2)),
+    restbudget:          parseFloat((income - expense).toFixed(2)),
+    month:               `${String(nextMonth).padStart(2, '0')}/${year}`
   };
 }
 

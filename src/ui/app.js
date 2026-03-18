@@ -303,25 +303,33 @@ function openModal(title, bodyHTML) {
   document.getElementById('modal-overlay').classList.add('open');
   document.querySelectorAll('.filter-bar select').forEach(el => el.disabled = true);
 
-  // Fokus in zwei Stufen: sofort ans Fenster, dann nach kurzem Delay
-  // ans erste Input-Feld im Modal übergeben.
-  window.focus();
-  if (window.api?.window?.focus) window.api.window.focus();
-
-  // 120ms reicht damit Electron den DOM-Paint abschließt
+  // Erstes Feld fokussieren — aber NUR wenn der Nutzer inzwischen noch kein
+  // anderes Feld angeklickt hat. Kein wiederholter window.api.window.focus()
+  // der aktive Eingaben unterbricht.
   setTimeout(() => {
-    if (window.api?.window?.focus) window.api.window.focus();
-    const firstInput = document.querySelector('#modal-body input, #modal-body select, #modal-body textarea');
-    if (firstInput) firstInput.focus();
-  }, 120);
+    const active = document.activeElement;
+    const isUserInput = active && (
+      active.tagName === 'INPUT' ||
+      active.tagName === 'SELECT' ||
+      active.tagName === 'TEXTAREA'
+    ) && document.getElementById('modal-body')?.contains(active);
+
+    if (!isUserInput) {
+      const firstInput = document.querySelector(
+        '#modal-body input:not([type=hidden]):not([disabled]), ' +
+        '#modal-body select:not([disabled]), ' +
+        '#modal-body textarea:not([disabled])'
+      );
+      if (firstInput) firstInput.focus();
+    }
+  }, 80);
 }
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
   document.querySelectorAll('.filter-bar select').forEach(el => el.disabled = false);
-  // Fokus nach Modal-Schließen sicherstellen
-  window.focus();
-  if (window.api?.window?.focus) window.api.window.focus();
+  // Kein window.api.window.focus() hier — das überschreibt sonst Fokus im
+  // Haupt-Content wenn der Nutzer direkt nach Schließen klickt.
 }
 
 document.getElementById('modal-close').addEventListener('click', closeModal);
@@ -335,7 +343,6 @@ document.getElementById('modal-overlay').addEventListener('mousedown', e => {
 });
 document.getElementById('modal-overlay').addEventListener('click', e => {
   const overlay = document.getElementById('modal-overlay');
-  // Nur schließen wenn mousedown UND click auf dem Overlay selbst waren
   if (e.target === overlay && overlayMousedownTarget === overlay) {
     closeModal();
   }
@@ -343,41 +350,27 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
 });
 
 // ── Fokus-Wiederherstellung ───────────────────────────────────────────────
-// Electron verliert nach Fensterwechsel oder nativen Dialogen den Webview-Fokus.
+// Einheitliche Strategie: window.api.window.focus() NUR beim echten
+// OS-Fensterwechsel (blur → focus), NICHT in Timern oder Modal-Lifecycle.
 //
-// WICHTIG: mousedown NICHT auf document registrieren – das unterbricht
-// Text-Markierung in Inputs (Electron feuert den Handler auch während drag).
-// Stattdessen: nur beim Zurückkehren zum Fenster und bei direktem Klick
-// auf ein Input-Element korrigieren.
+// Problem des alten Codes: 3 konkurrierende Mechanismen (Heartbeat 500ms,
+// openModal-Timer, pointerdown) kämpften gegeneinander und unterbrachen
+// laufende Nutzereingaben. Heartbeat rief webContents.focus() auf, das
+// den Input-Fokus im Renderer zurücksetzte.
 
-// Jedes Input-Feld: beim Klick direkt fokussieren.
-// Nur ausführen wenn das Element noch NICHT aktiv ist (= kein Eingriff
-// während der Nutzer bereits tippt oder Text markiert).
-document.addEventListener('pointerdown', e => {
-  const tag = e.target?.tagName?.toLowerCase();
-  if (tag === 'input' || tag === 'select' || tag === 'textarea') {
-    setTimeout(() => {
-      if (document.activeElement !== e.target) {
-        e.target.focus();
-      }
-    }, 0);
-  }
-}, true);
-
-// Beim Zurückkehren zum Fenster (z.B. Alt+Tab)
+// Einmalig beim echten Fensterwechsel (Alt+Tab zurück, Taskleisten-Klick)
+let _windowWasFocused = true;
+window.addEventListener('blur',  () => { _windowWasFocused = false; });
 window.addEventListener('focus', () => {
-  if (window.api?.window?.focus) window.api.window.focus();
+  if (!_windowWasFocused) {
+    _windowWasFocused = true;
+    // NUR wenn Fenster wirklich weg war: Electron-Webview-Fokus anfordern.
+    // Delay damit der OS-Fokus-Übergang abgeschlossen ist.
+    setTimeout(() => {
+      if (window.api?.window?.focus) window.api.window.focus();
+    }, 50);
+  }
 });
-
-// Heartbeat: nur aktiv wenn kein Input fokussiert ist → Fenster-Fokus
-// anfordern, aber niemals ein bestimmtes Feld überschreiben.
-setInterval(() => {
-  const overlay = document.getElementById('modal-overlay');
-  if (!overlay?.classList.contains('open')) return;
-  const active = document.activeElement;
-  if (active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA')) return;
-  if (window.api?.window?.focus) window.api.window.focus();
-}, 500);
 
 // ── Navigation ────────────────────────────────────────────────────────────
 
@@ -557,6 +550,11 @@ async function renderDashboardPage(container) {
               <span class="ds-row-label">Ausgaben</span>
               <span class="ds-row-value ds-negative">–${formatAmount(forecast.expense)}</span>
             </div>
+            ${forecast.expenseInstallments > 0 ? `
+            <div class="ds-row ds-row-sub">
+              <span class="ds-row-label">davon Ratenkäufe</span>
+              <span class="ds-row-value ds-negative" style="font-size:12px">–${formatAmount(forecast.expenseInstallments)}</span>
+            </div>` : ''}
           </div>
           <div class="ds-card-foot">
             <span class="ds-foot-label">Restbudget ${trendLabel}</span>
@@ -852,7 +850,6 @@ function openNewAccountModal() {
       <button class="btn btn-primary" onclick="submitNewAccount()">Konto anlegen</button>
     </div>
   `);
-  setTimeout(() => document.getElementById('acc-name').focus(), 50);
 }
 
 async function submitNewAccount() {
@@ -932,7 +929,6 @@ function openEditAccountModal(id) {
       <button class="btn btn-primary" onclick="submitEditAccount(${id}, ${a.balance})">Speichern</button>
     </div>
   `);
-  setTimeout(() => document.getElementById('edit-acc-name').focus(), 50);
 }
 
 function updateEditAccDiff(currentBalance) {
@@ -1303,7 +1299,6 @@ function openNewTransactionModal(fixcostMode = false) {
       <button class="btn btn-primary" onclick="submitNewTransaction()">Speichern</button>
     </div>
   `);
-  setTimeout(() => document.getElementById('tx-amount').focus(), 50);
 }
 
 // Geplante Felder ein-/ausblenden
@@ -1647,7 +1642,6 @@ function openNewReserveModal() {
       <button class="btn btn-primary" onclick="submitNewReserve()">Anlegen</button>
     </div>
   `);
-  setTimeout(() => document.getElementById('res-name').focus(), 50);
 }
 
 // Live-Berechnung: zeigt monatliches Äquivalent sobald Felder gefüllt sind
@@ -1875,7 +1869,6 @@ async function openNewInstallmentModal() {
       <button class="btn btn-primary" onclick="submitNewInstallment()">Speichern</button>
     </div>
   `);
-  setTimeout(() => document.getElementById('inst-name').focus(), 50);
 }
 
 // Live-Vorschau im Modal
@@ -2089,7 +2082,6 @@ function openNewDistributionModal() {
       <button class="btn btn-primary" onclick="submitNewDistribution()">Anlegen</button>
     </div>
   `);
-  setTimeout(() => document.getElementById('dist-desc').focus(), 50);
 }
 
 function updateDistTotal() {
@@ -2691,7 +2683,6 @@ function openNewCategoryModal() {
       <button class="btn btn-primary" onclick="submitNewCategory()">Anlegen</button>
     </div>
   `);
-  setTimeout(() => document.getElementById('cat-name').focus(), 50);
 }
 
 async function submitNewCategory() {
@@ -2728,7 +2719,6 @@ async function openEditCategoryModal(id) {
       <button class="btn btn-primary" onclick="submitEditCategory(${id})">Speichern</button>
     </div>
   `);
-  setTimeout(() => document.getElementById('edit-cat-name').focus(), 50);
 }
 
 async function submitEditCategory(id) {
